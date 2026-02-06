@@ -1,6 +1,6 @@
 // ============================================
-// Game Engine - Pixel Hero: Rescue the Princess
-// Complete Edition with Party, Quests & Sound
+// ピクセルの王国と最後の塔
+// Game Engine - Fixed Version
 // ============================================
 
 class Game {
@@ -18,20 +18,21 @@ class Game {
     this.displayScale = 2;
     this.scaledTileSize = this.tileSize * this.displayScale;
     
-    // Movement settings (slightly faster than before)
-    this.moveSpeed = 0.12; // Tiles per ms (was 0.08)
-    this.moveCooldown = 60; // ms between moves (was 80)
+    // Movement settings - MUCH SLOWER for precise control
+    this.moveSpeed = 0.004; // Very slow: tiles per ms
+    this.moveCooldown = 150; // ms between moves
     this.lastInputTime = 0;
     this.currentMoveTime = 0;
     this.startPosition = { x: 0, y: 0 };
     this.targetPosition = { x: 0, y: 0 };
     
     // Input state
-    this.input = { up: false, down: false, left: false, right: false, action: false };
+    this.input = { up: false, down: false, left: false, right: false };
+    this.inputHeld = false;
     
     // Game state
     this.state = {
-      screen: 'map', // map, battle, menu, dialogue
+      screen: 'map',
       currentMapId: null,
       currentMap: null,
       mapBackground: null,
@@ -39,21 +40,16 @@ class Game {
       direction: 'down',
       isMoving: false,
       flags: { ...GAME_DATA.flags },
-      party: [], // Party member IDs
-      partyStats: {}, // Stats for each party member
+      party: [],
+      partyStats: {},
       inventory: [],
       gold: 100,
-      quests: { active: [], completed: [] },
-      questProgress: {}, // Track enemy kills etc
       battleState: null,
-      dialogueQueue: [],
-      currentDialogue: null
+      currentDialogue: null,
+      eventSteps: null
     };
     
-    // Timing
     this.lastTime = 0;
-    
-    // Monster tracking (for respawn/removal)
     this.defeatedMonsters = new Set();
     this.monsterPositions = {};
     this.monsterMoveTimer = 0;
@@ -70,7 +66,6 @@ class Game {
   }
   
   initParty() {
-    // Initialize hero
     const heroData = GAME_DATA.actors.hero;
     this.state.party = ['hero'];
     this.state.partyStats = {
@@ -87,8 +82,6 @@ class Game {
   setupInput() {
     document.addEventListener('keydown', (e) => this.handleKeyDown(e));
     document.addEventListener('keyup', (e) => this.handleKeyUp(e));
-    
-    // Resume audio on first interaction
     document.addEventListener('click', () => this.audio.resume(), { once: true });
     document.addEventListener('keydown', () => this.audio.resume(), { once: true });
   }
@@ -97,10 +90,10 @@ class Game {
     const key = e.key.toLowerCase();
     
     if (this.state.screen === 'map' && !this.state.currentDialogue) {
-      if (key === 'arrowup' || key === 'w') this.input.up = true;
-      if (key === 'arrowdown' || key === 's') this.input.down = true;
-      if (key === 'arrowleft' || key === 'a') this.input.left = true;
-      if (key === 'arrowright' || key === 'd') this.input.right = true;
+      if (key === 'arrowup' || key === 'w') { this.input.up = true; e.preventDefault(); }
+      if (key === 'arrowdown' || key === 's') { this.input.down = true; e.preventDefault(); }
+      if (key === 'arrowleft' || key === 'a') { this.input.left = true; e.preventDefault(); }
+      if (key === 'arrowright' || key === 'd') { this.input.right = true; e.preventDefault(); }
       if (key === 'enter' || key === ' ') {
         e.preventDefault();
         this.handleAction();
@@ -117,6 +110,12 @@ class Game {
       if (key === 'escape' || key === 'm') {
         this.closeMenu();
       }
+    } else if (this.state.screen === 'battle') {
+      // Battle controls
+      if (key === '1') this.handleBattleCommand('attack');
+      if (key === '2') this.handleBattleCommand('skill');
+      if (key === '3') this.handleBattleCommand('item');
+      if (key === '4') this.handleBattleCommand('defend');
     }
   }
   
@@ -129,43 +128,22 @@ class Game {
   }
   
   setupUI() {
-    // Menu button
-    document.getElementById('btn-menu')?.addEventListener('click', () => {
-      this.toggleMenu();
-    });
+    document.getElementById('btn-menu')?.addEventListener('click', () => this.toggleMenu());
     
-    // Battle commands
     document.querySelectorAll('.battle-cmd').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const cmd = btn.dataset.cmd;
-        this.handleBattleCommand(cmd);
-      });
+      btn.addEventListener('click', () => this.handleBattleCommand(btn.dataset.cmd));
     });
     
-    // Menu items
     document.querySelectorAll('.menu-item').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const menu = btn.dataset.menu;
-        this.selectMenuItem(menu);
-      });
+      btn.addEventListener('click', () => this.selectMenuItem(btn.dataset.menu));
     });
     
-    // Retry/Title buttons
-    document.getElementById('btn-retry')?.addEventListener('click', () => {
-      location.reload();
-    });
-    
-    document.getElementById('btn-title')?.addEventListener('click', () => {
-      location.reload();
-    });
-    
-    // Dialogue click
-    document.getElementById('dialogue-box')?.addEventListener('click', () => {
-      this.advanceDialogue();
-    });
+    document.getElementById('btn-retry')?.addEventListener('click', () => location.reload());
+    document.getElementById('btn-title')?.addEventListener('click', () => location.reload());
+    document.getElementById('dialogue-box')?.addEventListener('click', () => this.advanceDialogue());
   }
   
-  // === MAP & MOVEMENT ===
+  // === MAP ===
   
   loadMap(mapId, spawn) {
     const map = GAME_DATA.maps[mapId];
@@ -174,12 +152,14 @@ class Game {
       return;
     }
     
+    console.log(`Loading map: ${mapId}`);
+    
     this.state.currentMapId = mapId;
     this.state.currentMap = { ...map, id: mapId };
-    this.state.position = { ...spawn };
+    this.state.position = { x: spawn.x, y: spawn.y };
     this.state.isMoving = false;
     
-    // Generate map background
+    // Generate map background with tiles
     this.state.mapBackground = this.spriteRenderer.generateMapBackground(map, this.displayScale);
     
     // Initialize monster positions
@@ -189,7 +169,7 @@ class Game {
     document.getElementById('map-name').textContent = `${map.name} (Lv.${map.recommendedLevel})`;
     
     // Check auto events
-    setTimeout(() => this.checkAutoEvents(), 100);
+    setTimeout(() => this.checkAutoEvents(), 200);
   }
   
   initMonsterPositions() {
@@ -200,11 +180,13 @@ class Game {
       map.monsters.forEach((monster, idx) => {
         const key = `${map.id}_${idx}`;
         if (!this.defeatedMonsters.has(key) && this.checkCondition(monster.condition)) {
-          this.monsterPositions[key] = { ...monster.pos };
+          this.monsterPositions[key] = { x: monster.pos.x, y: monster.pos.y };
         }
       });
     }
   }
+  
+  // === MOVEMENT ===
   
   move(direction) {
     if (this.state.isMoving || this.state.screen !== 'map' || this.state.currentDialogue) return;
@@ -218,10 +200,12 @@ class Game {
     
     this.state.direction = direction;
     
-    const newX = Math.round(this.state.position.x) + vector.x;
-    const newY = Math.round(this.state.position.y) + vector.y;
+    const currentX = Math.round(this.state.position.x);
+    const currentY = Math.round(this.state.position.y);
+    const newX = currentX + vector.x;
+    const newY = currentY + vector.y;
     
-    // Check exit first
+    // Check exit
     const exit = this.checkExit(newX, newY);
     if (exit) {
       if (!exit.condition || this.checkCondition(exit.condition)) {
@@ -231,10 +215,22 @@ class Game {
       }
     }
     
-    // Check collision
+    // Check collision with walls/NPCs
     if (!this.checkCollision(newX, newY)) {
+      // Check monster collision BEFORE moving
+      const monsterKey = this.checkMonsterAt(newX, newY);
+      if (monsterKey) {
+        this.audio.encounter();
+        const map = this.state.currentMap;
+        const monsterIdx = parseInt(monsterKey.split('_').pop());
+        const monster = map.monsters[monsterIdx];
+        this.startBattle(monster.enemyId, 1, monsterKey, monster.boss);
+        return;
+      }
+      
+      // Start movement
       this.state.isMoving = true;
-      this.startPosition = { x: Math.round(this.state.position.x), y: Math.round(this.state.position.y) };
+      this.startPosition = { x: currentX, y: currentY };
       this.targetPosition = { x: newX, y: newY };
       this.currentMoveTime = 0;
       this.audio.step();
@@ -245,10 +241,7 @@ class Game {
     const map = this.state.currentMap;
     if (!map) return true;
     
-    // Bounds check
     if (x < 0 || y < 0 || x >= map.size.w || y >= map.size.h) return true;
-    
-    // Collision tile check
     if (map.collision[y]?.[x] === 1) return true;
     
     // NPC collision
@@ -260,6 +253,25 @@ class Game {
     }
     
     return false;
+  }
+  
+  checkMonsterAt(x, y) {
+    const map = this.state.currentMap;
+    if (!map?.monsters) return null;
+    
+    for (let idx = 0; idx < map.monsters.length; idx++) {
+      const monster = map.monsters[idx];
+      const key = `${map.id}_${idx}`;
+      const pos = this.monsterPositions[key];
+      
+      if (!pos || this.defeatedMonsters.has(key)) continue;
+      if (!this.checkCondition(monster.condition)) continue;
+      
+      if (pos.x === x && pos.y === y) {
+        return key;
+      }
+    }
+    return null;
   }
   
   checkExit(x, y) {
@@ -295,7 +307,6 @@ class Game {
     const targetX = Math.round(this.state.position.x) + vector.x;
     const targetY = Math.round(this.state.position.y) + vector.y;
     
-    // Check action events
     this.checkActionEvents(targetX, targetY);
   }
   
@@ -321,13 +332,10 @@ class Game {
       if (event.trigger === 'touch' && event.at.x === x && event.at.y === y) {
         if (this.checkCondition(event.condition)) {
           this.runEvent(event);
-          break;
+          return;
         }
       }
     }
-    
-    // Check monster collision
-    this.checkMonsterCollision(x, y);
     
     // Check item pickup
     this.checkItemPickup(x, y);
@@ -347,28 +355,8 @@ class Game {
       }
     }
     
-    // Check item actions (pots, chests)
+    // Check item/chest action
     this.checkItemAction(x, y);
-  }
-  
-  checkMonsterCollision(x, y) {
-    const map = this.state.currentMap;
-    if (!map?.monsters) return;
-    
-    for (let idx = 0; idx < map.monsters.length; idx++) {
-      const monster = map.monsters[idx];
-      const key = `${map.id}_${idx}`;
-      const pos = this.monsterPositions[key];
-      
-      if (!pos || this.defeatedMonsters.has(key)) continue;
-      if (!this.checkCondition(monster.condition)) continue;
-      
-      if (pos.x === x && pos.y === y) {
-        this.audio.encounter();
-        this.startBattle(monster.enemyId, 1, key, monster.boss);
-        break;
-      }
-    }
   }
   
   checkItemPickup(x, y) {
@@ -376,11 +364,10 @@ class Game {
     if (!map?.items) return;
     
     for (const item of map.items) {
-      if (item.pos.x === x && item.pos.y === y) {
+      if (item.pos.x === x && item.pos.y === y && item.sprite === 'sparkle') {
         const flagKey = `item_${map.id}_${item.id}`;
         if (!this.state.flags[flagKey]) {
           this.state.flags[flagKey] = true;
-          
           if (item.itemId) {
             this.giveItem(item.itemId, 1);
             const itemData = GAME_DATA.items[item.itemId];
@@ -397,34 +384,16 @@ class Game {
     if (!map?.items) return;
     
     for (const item of map.items) {
-      if (item.pos.x === x && item.pos.y === y && item.sprite === 'pot') {
+      if (item.pos.x === x && item.pos.y === y) {
         const flagKey = `item_${map.id}_${item.id}`;
-        if (!this.state.flags[flagKey]) {
-          this.state.flags[flagKey] = true;
-          
-          if (item.itemId) {
-            this.giveItem(item.itemId, 1);
-            const itemData = GAME_DATA.items[item.itemId];
-            this.audio.chest();
-            this.showDialogue('system', `ツボを調べた…${itemData?.name || item.itemId}を見つけた！`);
-          } else {
-            this.showDialogue('system', 'ツボは空だった。');
-          }
-          return;
-        }
-      }
-      if (item.pos.x === x && item.pos.y === y && item.sprite === 'chest') {
-        const flagKey = `item_${map.id}_${item.id}`;
-        if (!this.state.flags[flagKey]) {
-          this.state.flags[flagKey] = true;
-          
-          if (item.itemId) {
-            this.giveItem(item.itemId, 1);
-            const itemData = GAME_DATA.items[item.itemId];
-            this.audio.chest();
-            this.showDialogue('system', `宝箱を開けた！${itemData?.name || item.itemId}を手に入れた！`);
-          }
-          return;
+        if (this.state.flags[flagKey]) continue;
+        
+        if (item.sprite === 'pot') {
+          this.audio.select();
+          // Pot already handled by events
+        } else if (item.sprite === 'chest') {
+          this.audio.chest();
+          // Chest already handled by events
         }
       }
     }
@@ -459,23 +428,6 @@ class Game {
         this.processNextEventStep();
         break;
         
-      case 'removeItem':
-        this.removeItem(step.itemId, step.qty);
-        this.processNextEventStep();
-        break;
-        
-      case 'giveGold':
-        this.state.gold += step.amount;
-        this.audio.getItem();
-        this.processNextEventStep();
-        break;
-        
-      case 'addPartyMember':
-        this.addPartyMember(step.actorId);
-        this.audio.partyJoin();
-        this.processNextEventStep();
-        break;
-        
       case 'startBattle':
         const battle = GAME_DATA.battles[step.battleId];
         if (battle) {
@@ -484,11 +436,6 @@ class Game {
           const enemy = battle.enemies[0];
           this.startBattle(enemy.enemyId, enemy.qty, null, true);
         }
-        break;
-        
-      case 'startQuest':
-        this.startQuest(step.questId);
-        this.processNextEventStep();
         break;
         
       case 'endGame':
@@ -501,101 +448,6 @@ class Game {
         
       default:
         this.processNextEventStep();
-    }
-  }
-  
-  // === PARTY SYSTEM ===
-  
-  addPartyMember(actorId) {
-    if (this.state.party.includes(actorId)) return;
-    
-    const actor = GAME_DATA.actors[actorId];
-    if (!actor) return;
-    
-    this.state.party.push(actorId);
-    this.state.partyStats[actorId] = {
-      ...JSON.parse(JSON.stringify(actor.stats)),
-      equipment: { ...actor.equipment },
-      skills: [...actor.skills]
-    };
-  }
-  
-  getPartyMember(actorId) {
-    return this.state.partyStats[actorId];
-  }
-  
-  getTotalStats(actorId) {
-    const member = this.getPartyMember(actorId);
-    if (!member) return null;
-    
-    const stats = { ...member };
-    
-    // Add equipment bonuses
-    for (const slot of ['weapon', 'armor']) {
-      const equipId = member.equipment[slot];
-      const equip = GAME_DATA.equipment[equipId];
-      if (equip?.mods) {
-        for (const [stat, value] of Object.entries(equip.mods)) {
-          stats[stat] = (stats[stat] || 0) + value;
-        }
-      }
-    }
-    
-    return stats;
-  }
-  
-  // === QUEST SYSTEM ===
-  
-  startQuest(questId) {
-    if (this.state.quests.active.includes(questId)) return;
-    if (this.state.quests.completed.includes(questId)) return;
-    
-    this.state.quests.active.push(questId);
-    this.state.questProgress[questId] = { kills: {} };
-  }
-  
-  updateQuestProgress(enemyId) {
-    for (const questId of this.state.quests.active) {
-      const quest = GAME_DATA.quests[questId];
-      if (quest?.target?.enemy === enemyId) {
-        const progress = this.state.questProgress[questId];
-        progress.kills[enemyId] = (progress.kills[enemyId] || 0) + 1;
-        
-        if (progress.kills[enemyId] >= quest.target.count) {
-          this.completeQuest(questId);
-        }
-      }
-    }
-  }
-  
-  completeQuest(questId) {
-    const idx = this.state.quests.active.indexOf(questId);
-    if (idx === -1) return;
-    
-    this.state.quests.active.splice(idx, 1);
-    this.state.quests.completed.push(questId);
-    
-    const quest = GAME_DATA.quests[questId];
-    if (quest) {
-      this.state.flags[quest.flag] = true;
-      
-      // Give rewards
-      if (quest.reward) {
-        if (quest.reward.exp) {
-          for (const memberId of this.state.party) {
-            this.giveExp(memberId, quest.reward.exp);
-          }
-        }
-        if (quest.reward.gold) {
-          this.state.gold += quest.reward.gold;
-        }
-        if (quest.reward.item) {
-          this.giveItem(quest.reward.item, quest.reward.qty || 1);
-        }
-      }
-      
-      this.audio.questComplete();
-      this.showDialogue('system', `【クエスト完了】${quest.name}`);
     }
   }
   
@@ -620,12 +472,12 @@ class Game {
     const typewriter = setInterval(() => {
       if (i < text.length) {
         textEl.textContent += text[i];
-        if (i % 2 === 0) this.audio.text();
+        if (i % 3 === 0) this.audio.text();
         i++;
       } else {
         clearInterval(typewriter);
       }
-    }, 30);
+    }, 40);
     
     this.state.typewriterInterval = typewriter;
   }
@@ -633,7 +485,6 @@ class Game {
   advanceDialogue() {
     if (!this.state.currentDialogue) return;
     
-    // Clear typewriter
     if (this.state.typewriterInterval) {
       clearInterval(this.state.typewriterInterval);
       this.state.typewriterInterval = null;
@@ -648,11 +499,16 @@ class Game {
     if (callback) callback();
   }
   
-  // === BATTLE SYSTEM ===
+  // === BATTLE ===
   
   startBattle(enemyId, count = 1, monsterKey = null, isBoss = false) {
     const enemy = GAME_DATA.enemies[enemyId];
-    if (!enemy) return;
+    if (!enemy) {
+      console.error(`Enemy not found: ${enemyId}`);
+      return;
+    }
+    
+    console.log(`Starting battle with: ${enemy.name}`);
     
     this.state.screen = 'battle';
     this.state.battleState = {
@@ -662,7 +518,6 @@ class Game {
         hp: enemy.stats.hp,
         maxHp: enemy.stats.maxHp
       }],
-      currentMemberIndex: 0,
       turn: 'player',
       monsterKey,
       isBoss,
@@ -671,11 +526,10 @@ class Game {
     
     this.showScreen('battle-screen');
     this.updateBattleUI();
+    this.enableBattleCommands(true);
     
     if (isBoss) {
       this.audio.bossAppear();
-    } else {
-      this.audio.encounter();
     }
     
     this.showBattleMessage(`${enemy.name}が現れた！`);
@@ -688,7 +542,7 @@ class Game {
     const enemy = bs.enemies[0];
     const hero = this.getTotalStats('hero');
     
-    // Enemy info
+    // Enemy
     document.getElementById('enemy-name').textContent = enemy.name;
     const enemyHpFill = document.querySelector('.enemy-hp .hp-fill');
     const hpPercent = (enemy.hp / enemy.maxHp) * 100;
@@ -703,7 +557,7 @@ class Game {
       enemySpriteEl.appendChild(enemySprite);
     }
     
-    // Hero info
+    // Hero
     document.getElementById('hero-hp-text').textContent = `${hero.hp}/${hero.maxHp}`;
     document.getElementById('hero-mp-text').textContent = `${hero.mp}/${hero.maxMp}`;
     
@@ -727,19 +581,21 @@ class Game {
   }
   
   handleBattleCommand(cmd) {
+    if (this.state.screen !== 'battle') return;
     if (this.state.battleState?.turn !== 'player') return;
     
     this.audio.select();
+    this.enableBattleCommands(false);
     
     switch (cmd) {
       case 'attack':
         this.playerAttack();
         break;
       case 'skill':
-        this.showSkillMenu();
+        this.playerSkill();
         break;
       case 'item':
-        this.showBattleItemMenu();
+        this.playerItem();
         break;
       case 'defend':
         this.playerDefend();
@@ -759,10 +615,63 @@ class Game {
     
     this.audio.attack();
     this.showBattleEffect('slash');
-    this.showBattleMessage(`${hero.level > 1 ? '勇者' : '勇者'}の攻撃！${damage}のダメージ！`);
+    this.showBattleMessage(`勇者の攻撃！\n${damage}のダメージ！`);
     this.updateBattleUI();
     
-    setTimeout(() => this.checkBattleEnd(), 1000);
+    setTimeout(() => this.checkBattleEnd(), 1200);
+  }
+  
+  playerSkill() {
+    const hero = this.getPartyMember('hero');
+    const skill = GAME_DATA.skills.brave_strike;
+    
+    if (hero.mp < skill.cost.mp) {
+      this.showBattleMessage('MPが足りない！');
+      this.enableBattleCommands(true);
+      return;
+    }
+    
+    hero.mp -= skill.cost.mp;
+    
+    const heroStats = this.getTotalStats('hero');
+    const enemy = this.state.battleState.enemies[0];
+    const baseDamage = Math.max(1, heroStats.atk * skill.power - enemy.stats.def / 2);
+    const damage = Math.floor(baseDamage * (Math.random() * 0.2 + 0.9));
+    
+    enemy.hp = Math.max(0, enemy.hp - damage);
+    
+    this.audio.critical();
+    this.showBattleEffect('slash');
+    this.showBattleMessage(`勇者の剣！\n${damage}のダメージ！`);
+    this.updateBattleUI();
+    
+    setTimeout(() => this.checkBattleEnd(), 1200);
+  }
+  
+  playerItem() {
+    const potion = this.state.inventory.find(i => 
+      i.itemId === 'potion' || i.itemId === 'hi_potion'
+    );
+    
+    if (!potion) {
+      this.showBattleMessage('使えるアイテムがない！');
+      this.enableBattleCommands(true);
+      return;
+    }
+    
+    const item = GAME_DATA.items[potion.itemId];
+    this.removeItem(potion.itemId, 1);
+    
+    const hero = this.getPartyMember('hero');
+    const healAmount = item.use.effects[0].value;
+    const heal = Math.min(healAmount, hero.maxHp - hero.hp);
+    hero.hp += heal;
+    
+    this.audio.heal();
+    this.showBattleMessage(`${item.name}を使った！\nHPが${heal}回復した！`);
+    this.updateBattleUI();
+    
+    setTimeout(() => this.enemyTurn(), 1200);
   }
   
   playerDefend() {
@@ -771,112 +680,11 @@ class Game {
     setTimeout(() => this.enemyTurn(), 1000);
   }
   
-  showSkillMenu() {
-    const hero = this.getPartyMember('hero');
-    const skills = hero.skills;
-    
-    let msg = 'とくぎ: ';
-    skills.forEach((skillId, i) => {
-      const skill = GAME_DATA.skills[skillId];
-      msg += `${i + 1}.${skill.name}(MP${skill.cost.mp}) `;
-    });
-    
-    this.showBattleMessage(msg);
-    
-    // For simplicity, use first offensive skill
-    const skillId = skills.find(s => GAME_DATA.skills[s].target === 'enemy');
-    if (skillId) {
-      setTimeout(() => this.useSkill(skillId), 500);
-    } else {
-      setTimeout(() => this.enemyTurn(), 500);
-    }
-  }
-  
-  useSkill(skillId) {
-    const skill = GAME_DATA.skills[skillId];
-    const hero = this.getPartyMember('hero');
-    
-    if (hero.mp < skill.cost.mp) {
-      this.showBattleMessage('MPが足りない！');
-      setTimeout(() => this.enemyTurn(), 1000);
-      return;
-    }
-    
-    hero.mp -= skill.cost.mp;
-    
-    if (skill.target === 'enemy') {
-      const heroStats = this.getTotalStats('hero');
-      const enemy = this.state.battleState.enemies[0];
-      const baseDamage = Math.max(1, heroStats.atk * skill.power - enemy.stats.def / 2);
-      const damage = Math.floor(baseDamage * (Math.random() * 0.2 + 0.9));
-      
-      enemy.hp = Math.max(0, enemy.hp - damage);
-      
-      this.audio.attack();
-      this.showBattleEffect('slash');
-      this.showBattleMessage(`${skill.name}！${damage}のダメージ！`);
-    } else if (skill.healAmount) {
-      const heal = Math.min(skill.healAmount, hero.maxHp - hero.hp);
-      hero.hp += heal;
-      this.audio.heal();
-      this.showBattleMessage(`${skill.name}！HPが${heal}回復した！`);
-    }
-    
-    this.updateBattleUI();
-    setTimeout(() => this.checkBattleEnd(), 1000);
-  }
-  
-  showBattleItemMenu() {
-    const consumables = this.state.inventory.filter(item => {
-      const data = GAME_DATA.items[item.itemId];
-      return data?.type === 'consumable';
-    });
-    
-    if (consumables.length === 0) {
-      this.showBattleMessage('使えるアイテムがない！');
-      return;
-    }
-    
-    // Use first potion
-    const potion = consumables.find(i => i.itemId === 'potion' || i.itemId === 'hi_potion');
-    if (potion) {
-      this.useBattleItem(potion.itemId);
-    } else {
-      this.showBattleMessage('回復アイテムがない！');
-    }
-  }
-  
-  useBattleItem(itemId) {
-    const item = GAME_DATA.items[itemId];
-    if (!item) return;
-    
-    this.removeItem(itemId, 1);
-    
-    const hero = this.getPartyMember('hero');
-    for (const effect of item.use.effects) {
-      if (effect.type === 'healHp') {
-        const heal = Math.min(effect.value, hero.maxHp - hero.hp);
-        hero.hp += heal;
-        this.audio.heal();
-        this.showBattleMessage(`${item.name}を使った！HPが${heal}回復した！`);
-      } else if (effect.type === 'healMp') {
-        const heal = Math.min(effect.value, hero.maxMp - hero.mp);
-        hero.mp += heal;
-        this.audio.heal();
-        this.showBattleMessage(`${item.name}を使った！MPが${heal}回復した！`);
-      }
-    }
-    
-    this.updateBattleUI();
-    setTimeout(() => this.enemyTurn(), 1000);
-  }
-  
   enemyTurn() {
     const bs = this.state.battleState;
     if (!bs || bs.enemies[0].hp <= 0) return;
     
     bs.turn = 'enemy';
-    this.enableBattleCommands(false);
     
     const enemy = bs.enemies[0];
     const ai = enemy.ai?.pattern || ['attack'];
@@ -888,37 +696,22 @@ class Game {
     let damage = 0;
     let message = '';
     
+    const defending = bs.defending['hero'];
+    const defMod = defending ? 2 : 1;
+    
     switch (action) {
       case 'attack':
-        const defending = bs.defending['hero'];
-        const defMod = defending ? 2 : 1;
         damage = Math.max(1, Math.floor((enemy.stats.atk - heroStats.def / defMod) * (Math.random() * 0.3 + 0.85)));
         hero.hp = Math.max(0, hero.hp - damage);
-        message = `${enemy.name}の攻撃！${damage}のダメージ！`;
+        message = `${enemy.name}の攻撃！\n${damage}のダメージ！`;
         this.audio.damage();
         this.showBattleEffect('damage');
         break;
         
       case 'powerAttack':
-        damage = Math.max(1, Math.floor((enemy.stats.atk * 1.5 - heroStats.def) * (Math.random() * 0.3 + 0.85)));
+        damage = Math.max(1, Math.floor((enemy.stats.atk * 1.5 - heroStats.def / defMod) * (Math.random() * 0.3 + 0.85)));
         hero.hp = Math.max(0, hero.hp - damage);
-        message = `${enemy.name}の強攻撃！${damage}のダメージ！`;
-        this.audio.critical();
-        this.showBattleEffect('damage');
-        break;
-        
-      case 'magic':
-        damage = Math.max(1, Math.floor(enemy.stats.atk * 1.2 * (Math.random() * 0.3 + 0.85)));
-        hero.hp = Math.max(0, hero.hp - damage);
-        message = `${enemy.name}の魔法攻撃！${damage}のダメージ！`;
-        this.audio.damage();
-        this.showBattleEffect('damage');
-        break;
-        
-      case 'ultimate':
-        damage = Math.max(1, Math.floor(enemy.stats.atk * 2 * (Math.random() * 0.2 + 0.9)));
-        hero.hp = Math.max(0, hero.hp - damage);
-        message = `${enemy.name}の究極攻撃！${damage}のダメージ！`;
+        message = `${enemy.name}の強攻撃！\n${damage}のダメージ！`;
         this.audio.critical();
         this.showBattleEffect('damage');
         break;
@@ -926,9 +719,16 @@ class Game {
       case 'defend':
         message = `${enemy.name}は身構えている…`;
         break;
+        
+      default:
+        damage = Math.max(1, Math.floor((enemy.stats.atk - heroStats.def / defMod) * (Math.random() * 0.3 + 0.85)));
+        hero.hp = Math.max(0, hero.hp - damage);
+        message = `${enemy.name}の攻撃！\n${damage}のダメージ！`;
+        this.audio.damage();
+        this.showBattleEffect('damage');
     }
     
-    bs.defending = {}; // Reset defending
+    bs.defending = {};
     this.showBattleMessage(message);
     this.updateBattleUI();
     
@@ -969,33 +769,24 @@ class Game {
     
     this.audio.victory();
     
-    // Mark monster as defeated
     if (bs.monsterKey) {
       this.defeatedMonsters.add(bs.monsterKey);
     }
     
-    // Update quest progress
-    this.updateQuestProgress(enemy.id);
-    
-    // Calculate rewards
     const expGain = enemyData.exp || 10;
     const goldGain = enemyData.gold || 5;
     
     this.state.gold += goldGain;
+    this.giveExp('hero', expGain);
     
-    // Give EXP to all party members
-    for (const memberId of this.state.party) {
-      this.giveExp(memberId, expGain);
-    }
-    
-    // Check drops
+    // Drops
     let dropMessage = '';
     if (enemyData.drops) {
       for (const drop of enemyData.drops) {
         if (Math.random() < drop.chance) {
           this.giveItem(drop.itemId, drop.qty);
           const itemData = GAME_DATA.items[drop.itemId];
-          dropMessage = `\n${itemData?.name || drop.itemId}を手に入れた！`;
+          dropMessage = `\n${itemData?.name}を手に入れた！`;
         }
       }
     }
@@ -1003,7 +794,6 @@ class Game {
     this.showBattleMessage(`${enemy.name}を倒した！\n${expGain}EXP ${goldGain}G獲得！${dropMessage}`);
     
     setTimeout(() => {
-      // Check for scripted battle victory
       if (this.state.pendingBattleVictory) {
         this.state.eventSteps = [...this.state.pendingBattleVictory];
         this.state.pendingBattleVictory = null;
@@ -1013,7 +803,7 @@ class Game {
       } else {
         this.endBattle();
       }
-    }, 2000);
+    }, 2500);
   }
   
   battleDefeat() {
@@ -1040,7 +830,30 @@ class Game {
     this.enableBattleCommands(true);
   }
   
-  // === LEVELING ===
+  // === STATS ===
+  
+  getPartyMember(actorId) {
+    return this.state.partyStats[actorId];
+  }
+  
+  getTotalStats(actorId) {
+    const member = this.getPartyMember(actorId);
+    if (!member) return null;
+    
+    const stats = { ...member };
+    
+    for (const slot of ['weapon', 'armor']) {
+      const equipId = member.equipment[slot];
+      const equip = GAME_DATA.equipment[equipId];
+      if (equip?.mods) {
+        for (const [stat, value] of Object.entries(equip.mods)) {
+          stats[stat] = (stats[stat] || 0) + value;
+        }
+      }
+    }
+    
+    return stats;
+  }
   
   giveExp(memberId, amount) {
     const member = this.getPartyMember(memberId);
@@ -1048,7 +861,6 @@ class Game {
     
     member.exp += amount;
     
-    // Check level up
     const expTable = GAME_DATA.constants.expTable;
     const maxLevel = GAME_DATA.constants.maxLevel;
     
@@ -1064,7 +876,6 @@ class Game {
     
     member.level++;
     
-    // Apply growths
     const growths = actor.growths;
     member.maxHp += growths.hp;
     member.hp = member.maxHp;
@@ -1075,7 +886,7 @@ class Game {
     member.spd += growths.spd;
     
     this.audio.levelUp();
-    this.showDialogue('system', `${actor.name}はレベル${member.level}になった！`);
+    this.showDialogue('system', `レベルアップ！\n${actor.name}はレベル${member.level}になった！`);
   }
   
   // === INVENTORY ===
@@ -1098,10 +909,6 @@ class Game {
         this.state.inventory.splice(idx, 1);
       }
     }
-  }
-  
-  hasItem(itemId) {
-    return this.state.inventory.some(i => i.itemId === itemId && i.qty > 0);
   }
   
   // === MENU ===
@@ -1151,7 +958,6 @@ class Game {
     const hero = this.getTotalStats('hero');
     const heroBase = this.getPartyMember('hero');
     
-    // Status
     document.getElementById('stat-level').textContent = hero.level;
     document.getElementById('stat-hp').textContent = hero.hp;
     document.getElementById('stat-maxhp').textContent = hero.maxHp;
@@ -1174,61 +980,15 @@ class Game {
       itemList.appendChild(li);
     }
     
+    if (this.state.inventory.length === 0) {
+      itemList.innerHTML = '<li style="color:#666">アイテムなし</li>';
+    }
+    
     // Equipment
     const weapon = GAME_DATA.equipment[heroBase.equipment.weapon];
     const armor = GAME_DATA.equipment[heroBase.equipment.armor];
     document.getElementById('equip-weapon').textContent = weapon?.name || 'なし';
     document.getElementById('equip-armor').textContent = armor?.name || 'なし';
-    
-    // Party display
-    this.updatePartyUI();
-    
-    // Quest display
-    this.updateQuestUI();
-  }
-  
-  updatePartyUI() {
-    const partyList = document.getElementById('party-list');
-    if (!partyList) return;
-    
-    partyList.innerHTML = '';
-    for (const memberId of this.state.party) {
-      const member = this.getPartyMember(memberId);
-      const actor = GAME_DATA.actors[memberId];
-      
-      const li = document.createElement('li');
-      li.innerHTML = `
-        <span class="party-name">${actor.name}</span>
-        <span class="party-class">${actor.class}</span>
-        <span class="party-level">Lv.${member.level}</span>
-        <span class="party-hp">HP:${member.hp}/${member.maxHp}</span>
-      `;
-      partyList.appendChild(li);
-    }
-  }
-  
-  updateQuestUI() {
-    const questList = document.getElementById('quest-list');
-    if (!questList) return;
-    
-    questList.innerHTML = '';
-    for (const questId of this.state.quests.active) {
-      const quest = GAME_DATA.quests[questId];
-      const progress = this.state.questProgress[questId];
-      
-      const li = document.createElement('li');
-      let progressText = '';
-      if (quest.target) {
-        const kills = progress?.kills?.[quest.target.enemy] || 0;
-        progressText = ` (${kills}/${quest.target.count})`;
-      }
-      li.innerHTML = `<span class="quest-name">${quest.name}${progressText}</span><span class="quest-type">${quest.type === 'main' ? 'メイン' : 'サブ'}</span>`;
-      questList.appendChild(li);
-    }
-    
-    if (this.state.quests.active.length === 0) {
-      questList.innerHTML = '<li class="no-quests">進行中のクエストはありません</li>';
-    }
   }
   
   useMenuItem(itemId) {
@@ -1236,7 +996,6 @@ class Game {
     if (!item || item.type !== 'consumable') return;
     
     const hero = this.getPartyMember('hero');
-    let used = false;
     
     for (const effect of item.use.effects) {
       if (effect.type === 'healHp' && hero.hp < hero.maxHp) {
@@ -1244,25 +1003,13 @@ class Game {
         hero.hp += heal;
         this.removeItem(itemId, 1);
         this.audio.heal();
-        this.showDialogue('system', `${item.name}を使った！HPが${heal}回復した！`);
-        used = true;
-        break;
-      } else if (effect.type === 'healMp' && hero.mp < hero.maxMp) {
-        const heal = Math.min(effect.value, hero.maxMp - hero.mp);
-        hero.mp += heal;
-        this.removeItem(itemId, 1);
-        this.audio.heal();
-        this.showDialogue('system', `${item.name}を使った！MPが${heal}回復した！`);
-        used = true;
-        break;
+        this.showDialogue('system', `${item.name}を使った！\nHPが${heal}回復した！`);
+        this.updateMenuUI();
+        return;
       }
     }
     
-    if (!used) {
-      this.audio.cancel();
-    }
-    
-    this.updateMenuUI();
+    this.audio.cancel();
   }
   
   // === SCREENS ===
@@ -1284,7 +1031,6 @@ class Game {
     if (!ending) return;
     
     this.audio.gameClear();
-    
     this.state.screen = 'ending';
     document.getElementById('ending-title').textContent = ending.title;
     document.getElementById('ending-text').textContent = ending.text;
@@ -1297,17 +1043,21 @@ class Game {
     const deltaTime = timestamp - this.lastTime;
     this.lastTime = timestamp;
     
-    this.update(deltaTime, timestamp);
-    this.render(timestamp);
+    this.update(deltaTime);
+    this.render();
     
     requestAnimationFrame((t) => this.gameLoop(t));
   }
   
-  update(deltaTime, timestamp) {
+  update(deltaTime) {
     if (this.state.screen !== 'map' || this.state.currentDialogue) return;
     
-    // Update monster movement
-    this.updateMonsters(deltaTime);
+    // Update monsters
+    this.monsterMoveTimer += deltaTime;
+    if (this.monsterMoveTimer > 2000) {
+      this.monsterMoveTimer = 0;
+      this.updateMonsters();
+    }
     
     if (this.state.isMoving) {
       this.currentMoveTime += deltaTime;
@@ -1315,20 +1065,17 @@ class Game {
       let progress = this.currentMoveTime / duration;
       
       if (progress >= 1) {
-        this.state.position = { ...this.targetPosition };
+        this.state.position = { x: this.targetPosition.x, y: this.targetPosition.y };
         this.state.isMoving = false;
         this.currentMoveTime = 0;
         
-        // Check events at new position
         this.checkTouchEvents(this.state.position.x, this.state.position.y);
       } else {
-        // Ease out
         const easedProgress = 1 - Math.pow(1 - progress, 2);
         this.state.position.x = this.startPosition.x + (this.targetPosition.x - this.startPosition.x) * easedProgress;
         this.state.position.y = this.startPosition.y + (this.targetPosition.y - this.startPosition.y) * easedProgress;
       }
     } else {
-      // Handle input
       if (this.input.up) this.move('up');
       else if (this.input.down) this.move('down');
       else if (this.input.left) this.move('left');
@@ -1336,18 +1083,11 @@ class Game {
     }
   }
   
-  updateMonsters(deltaTime) {
-    this.monsterMoveTimer += deltaTime;
-    if (this.monsterMoveTimer < 1000) return; // Move every 1 second
-    this.monsterMoveTimer = 0;
-    
+  updateMonsters() {
     const map = this.state.currentMap;
     if (!map?.monsters) return;
     
-    const vectors = [
-      { x: 0, y: -1 }, { x: 0, y: 1 },
-      { x: -1, y: 0 }, { x: 1, y: 0 }
-    ];
+    const vectors = [{ x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 }];
     
     for (let idx = 0; idx < map.monsters.length; idx++) {
       const monster = map.monsters[idx];
@@ -1357,15 +1097,12 @@ class Game {
       if (!pos || this.defeatedMonsters.has(key)) continue;
       if (monster.movePattern === 'none') continue;
       
-      // Random movement
-      if (Math.random() < 0.5) {
+      if (Math.random() < 0.3) {
         const dir = vectors[Math.floor(Math.random() * vectors.length)];
         const newX = pos.x + dir.x;
         const newY = pos.y + dir.y;
         
-        // Check collision
-        if (!this.checkCollision(newX, newY) && 
-            !(newX === Math.round(this.state.position.x) && newY === Math.round(this.state.position.y))) {
+        if (!this.checkCollision(newX, newY)) {
           pos.x = newX;
           pos.y = newY;
         }
@@ -1373,21 +1110,18 @@ class Game {
     }
   }
   
-  render(timestamp) {
+  render() {
     if (this.state.screen !== 'map') return;
     
     const ctx = this.ctx;
     const map = this.state.currentMap;
     if (!map) return;
     
-    // Update animation
-    this.spriteRenderer.updateAnimation(timestamp);
-    
     // Clear
     ctx.fillStyle = '#1a2636';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     
-    // Calculate camera
+    // Camera
     const camX = this.state.position.x * this.scaledTileSize - this.canvas.width / 2 + this.scaledTileSize / 2;
     const camY = this.state.position.y * this.scaledTileSize - this.canvas.height / 2 + this.scaledTileSize / 2;
     
@@ -1396,12 +1130,12 @@ class Game {
     const clampedCamX = Math.max(0, Math.min(maxCamX, camX));
     const clampedCamY = Math.max(0, Math.min(maxCamY, camY));
     
-    // Draw map background
+    // Map background
     if (this.state.mapBackground) {
       ctx.drawImage(this.state.mapBackground, -clampedCamX, -clampedCamY);
     }
     
-    // Draw items (sparkles, pots, chests)
+    // Items
     if (map.items) {
       for (const item of map.items) {
         const flagKey = `item_${map.id}_${item.id}`;
@@ -1417,7 +1151,7 @@ class Game {
       }
     }
     
-    // Draw NPCs
+    // NPCs
     if (map.npcs) {
       for (const npc of map.npcs) {
         if (!this.checkCondition(npc.condition)) continue;
@@ -1435,7 +1169,7 @@ class Game {
       }
     }
     
-    // Draw monsters
+    // Monsters
     if (map.monsters) {
       for (let idx = 0; idx < map.monsters.length; idx++) {
         const monster = map.monsters[idx];
@@ -1455,7 +1189,7 @@ class Game {
       }
     }
     
-    // Draw hero
+    // Hero
     const heroSprite = this.spriteRenderer.getCharacterSprite('hero', this.state.direction, this.displayScale);
     if (heroSprite) {
       ctx.drawImage(heroSprite,
@@ -1464,14 +1198,14 @@ class Game {
       );
     }
     
-    // Draw exit indicators
+    // Exit arrows
     if (map.exits) {
       for (const exit of map.exits) {
         if (exit.condition && !this.checkCondition(exit.condition)) continue;
         
         const sprite = this.spriteRenderer.getTileSprite('exit_arrow', this.displayScale);
         if (sprite) {
-          ctx.globalAlpha = 0.7;
+          ctx.globalAlpha = 0.6 + Math.sin(Date.now() / 300) * 0.2;
           ctx.drawImage(sprite,
             exit.at.x * this.scaledTileSize - clampedCamX,
             exit.at.y * this.scaledTileSize - clampedCamY
@@ -1483,7 +1217,7 @@ class Game {
   }
 }
 
-// Start game
+// Start
 window.addEventListener('DOMContentLoaded', () => {
   window.game = new Game();
 });
