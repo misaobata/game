@@ -11,140 +11,121 @@
 </head>
 <body>
   <div id="game-container">
-    <header id="game-header">
-      <h1>Pixel Hero</h1>
-      <span class="subtitle">〜姫を救え〜</span>
-    </header>
-    
-    <main id="game-main">
-      <!-- Map Screen -->
-      <div id="map-screen" class="screen active">
-        <div id="map-info">
-          <span id="map-name">はじまりの村</span>
-        </div>
-        <canvas id="game-canvas" width="320" height="288"></canvas>
-        <div id="map-controls">
-          <div class="dpad">
-            <button class="dpad-btn up" data-dir="up">▲</button>
-            <button class="dpad-btn left" data-dir="left">◀</button>
-            <button class="dpad-btn right" data-dir="right">▶</button>
-            <button class="dpad-btn down" data-dir="down">▼</button>
-          </div>
-          <div class="action-buttons">
-            <button id="btn-action" class="action-btn">A</button>
-            <button id="btn-menu" class="menu-btn">MENU</button>
-          </div>
-        </div>
+    <!-- Map Screen -->
+    <div id="map-screen" class="screen active">
+      <div id="map-header">
+        <span id="map-name">城内ホール</span>
+        <button id="btn-menu" class="menu-btn">MENU</button>
       </div>
-
-      <!-- Battle Screen -->
-      <div id="battle-screen" class="screen">
-        <div id="battle-bg">
-          <div id="enemy-area">
-            <div id="enemy-sprite"></div>
-            <div id="enemy-info">
-              <span id="enemy-name"></span>
-              <div class="hp-bar enemy-hp">
-                <div class="hp-fill"></div>
-              </div>
-            </div>
-          </div>
-          <div id="battle-effect"></div>
-        </div>
-        <div id="battle-ui">
-          <div id="hero-battle-info">
-            <span class="hero-name">勇者</span>
-            <div class="stat-row">
-              <span>HP</span>
-              <div class="hp-bar hero-hp">
-                <div class="hp-fill"></div>
-              </div>
-              <span id="hero-hp-text">30/30</span>
-            </div>
-            <div class="stat-row">
-              <span>MP</span>
-              <div class="mp-bar">
-                <div class="mp-fill"></div>
-              </div>
-              <span id="hero-mp-text">10/10</span>
-            </div>
-          </div>
-          <div id="battle-menu">
-            <button class="battle-cmd" data-cmd="attack">たたかう</button>
-            <button class="battle-cmd" data-cmd="skill">とくぎ</button>
-            <button class="battle-cmd" data-cmd="item">アイテム</button>
-            <button class="battle-cmd" data-cmd="defend">ぼうぎょ</button>
-          </div>
-          <div id="battle-message"></div>
-        </div>
+      <canvas id="game-canvas" width="480" height="416"></canvas>
+      <div id="controls-hint">
+        <span>移動: ← ↑ ↓ → | 決定: Enter/Space | メニュー: Esc</span>
       </div>
+    </div>
 
-      <!-- Dialogue Box -->
-      <div id="dialogue-box" class="hidden">
-        <div id="dialogue-speaker"></div>
-        <div id="dialogue-text"></div>
-        <div id="dialogue-continue">▼</div>
-      </div>
-
-      <!-- Menu Screen -->
-      <div id="menu-screen" class="screen">
-        <div class="menu-panel">
-          <h2>メニュー</h2>
-          <div class="menu-content">
-            <div class="menu-left">
-              <button class="menu-item active" data-menu="status">ステータス</button>
-              <button class="menu-item" data-menu="items">アイテム</button>
-              <button class="menu-item" data-menu="equipment">そうび</button>
-              <button class="menu-item" data-menu="close">とじる</button>
+    <!-- Battle Screen -->
+    <div id="battle-screen" class="screen">
+      <div id="battle-bg">
+        <div id="enemy-area">
+          <div id="enemy-sprite"></div>
+          <div id="enemy-info">
+            <span id="enemy-name"></span>
+            <div class="hp-bar enemy-hp">
+              <div class="hp-fill"></div>
             </div>
-            <div class="menu-right">
-              <div id="status-view" class="menu-view active">
-                <div class="hero-portrait"></div>
-                <div class="status-details">
-                  <p><strong>勇者</strong> Lv.<span id="stat-level">1</span></p>
-                  <p>HP: <span id="stat-hp">30</span>/<span id="stat-maxhp">30</span></p>
-                  <p>MP: <span id="stat-mp">10</span>/<span id="stat-maxmp">10</span></p>
-                  <p>ATK: <span id="stat-atk">6</span></p>
-                  <p>DEF: <span id="stat-def">3</span></p>
-                  <p>SPD: <span id="stat-spd">4</span></p>
-                  <p>EXP: <span id="stat-exp">0</span></p>
-                </div>
+          </div>
+        </div>
+        <div id="battle-effect"></div>
+      </div>
+      <div id="battle-ui">
+        <div id="hero-battle-info">
+          <span class="hero-name">勇者</span>
+          <div class="stat-row">
+            <span>HP</span>
+            <div class="hp-bar hero-hp">
+              <div class="hp-fill"></div>
+            </div>
+            <span id="hero-hp-text">30/30</span>
+          </div>
+          <div class="stat-row">
+            <span>MP</span>
+            <div class="mp-bar">
+              <div class="mp-fill"></div>
+            </div>
+            <span id="hero-mp-text">10/10</span>
+          </div>
+        </div>
+        <div id="battle-menu">
+          <button class="battle-cmd" data-cmd="attack">たたかう</button>
+          <button class="battle-cmd" data-cmd="skill">とくぎ</button>
+          <button class="battle-cmd" data-cmd="item">アイテム</button>
+          <button class="battle-cmd" data-cmd="defend">ぼうぎょ</button>
+        </div>
+        <div id="battle-message"></div>
+      </div>
+    </div>
+
+    <!-- Dialogue Box -->
+    <div id="dialogue-box" class="hidden">
+      <div id="dialogue-speaker"></div>
+      <div id="dialogue-text"></div>
+      <div id="dialogue-continue">▼</div>
+    </div>
+
+    <!-- Menu Screen -->
+    <div id="menu-screen" class="screen">
+      <div class="menu-panel">
+        <h2>メニュー</h2>
+        <div class="menu-content">
+          <div class="menu-left">
+            <button class="menu-item active" data-menu="status">ステータス</button>
+            <button class="menu-item" data-menu="items">アイテム</button>
+            <button class="menu-item" data-menu="equipment">そうび</button>
+            <button class="menu-item" data-menu="close">とじる</button>
+          </div>
+          <div class="menu-right">
+            <div id="status-view" class="menu-view active">
+              <div class="hero-portrait"></div>
+              <div class="status-details">
+                <p><strong>勇者</strong> Lv.<span id="stat-level">1</span></p>
+                <p>HP: <span id="stat-hp">30</span>/<span id="stat-maxhp">30</span></p>
+                <p>MP: <span id="stat-mp">10</span>/<span id="stat-maxmp">10</span></p>
+                <p>ATK: <span id="stat-atk">6</span></p>
+                <p>DEF: <span id="stat-def">3</span></p>
+                <p>SPD: <span id="stat-spd">4</span></p>
+                <p>EXP: <span id="stat-exp">0</span></p>
               </div>
-              <div id="items-view" class="menu-view">
-                <ul id="item-list"></ul>
-              </div>
-              <div id="equipment-view" class="menu-view">
-                <p>武器: <span id="equip-weapon">木の剣</span></p>
-                <p>防具: <span id="equip-armor">布の服</span></p>
-              </div>
+            </div>
+            <div id="items-view" class="menu-view">
+              <ul id="item-list"></ul>
+            </div>
+            <div id="equipment-view" class="menu-view">
+              <p>武器: <span id="equip-weapon">木の剣</span></p>
+              <p>防具: <span id="equip-armor">布の服</span></p>
             </div>
           </div>
         </div>
       </div>
+    </div>
 
-      <!-- Game Over Screen -->
-      <div id="gameover-screen" class="screen">
-        <div class="gameover-content">
-          <h2>GAME OVER</h2>
-          <p>勇者は倒れた…</p>
-          <button id="btn-retry">もう一度</button>
-        </div>
+    <!-- Game Over Screen -->
+    <div id="gameover-screen" class="screen">
+      <div class="gameover-content">
+        <h2>GAME OVER</h2>
+        <p>勇者は倒れた…</p>
+        <button id="btn-retry">もう一度</button>
       </div>
+    </div>
 
-      <!-- Ending Screen -->
-      <div id="ending-screen" class="screen">
-        <div class="ending-content">
-          <h2 id="ending-title"></h2>
-          <p id="ending-text"></p>
-          <div class="ending-art"></div>
-          <button id="btn-title">タイトルへ</button>
-        </div>
+    <!-- Ending Screen -->
+    <div id="ending-screen" class="screen">
+      <div class="ending-content">
+        <h2 id="ending-title"></h2>
+        <p id="ending-text"></p>
+        <div class="ending-art"></div>
+        <button id="btn-title">タイトルへ</button>
       </div>
-    </main>
-
-    <footer id="game-footer">
-      <p>WASD/矢印キーで移動 | Spaceで決定 | Escでメニュー</p>
-    </footer>
+    </div>
   </div>
 
   <script src="data.js"></script>
@@ -152,4 +133,3 @@
   <script src="game.js"></script>
 </body>
 </html>
-

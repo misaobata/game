@@ -9,12 +9,14 @@ class Game {
     this.ctx = this.canvas.getContext('2d');
     this.ctx.imageSmoothingEnabled = false;
     
-    this.tileSize = 16;
+    // Scale everything 2x for better visibility
+    this.scale = 2;
+    this.tileSize = 16 * this.scale; // 32px tiles
     this.spriteRenderer = new SpriteRenderer();
     
     // Movement settings (Dragon Quest style)
-    this.moveSpeed = 0.08;
-    this.moveCooldown = 80;
+    this.moveSpeed = 0.06; // Slightly slower for larger view
+    this.moveCooldown = 100;
     
     // Monster movement timer
     this.monsterMoveTimer = 0;
@@ -80,37 +82,15 @@ class Game {
   }
   
   setupInput() {
+    // Keyboard controls
     document.addEventListener('keydown', (e) => this.handleKeyDown(e));
     document.addEventListener('keyup', (e) => this.handleKeyUp(e));
     
-    document.querySelectorAll('.dpad-btn').forEach(btn => {
-      btn.addEventListener('mousedown', () => {
-        this.input[btn.dataset.dir] = true;
-      });
-      btn.addEventListener('mouseup', () => {
-        this.input[btn.dataset.dir] = false;
-      });
-      btn.addEventListener('mouseleave', () => {
-        this.input[btn.dataset.dir] = false;
-      });
-      btn.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        this.input[btn.dataset.dir] = true;
-      });
-      btn.addEventListener('touchend', () => {
-        this.input[btn.dataset.dir] = false;
-      });
-    });
-    
-    const actionBtn = document.getElementById('btn-action');
-    actionBtn.addEventListener('click', () => this.handleAction());
-    actionBtn.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      this.handleAction();
-    });
-    
+    // Menu button only
     const menuBtn = document.getElementById('btn-menu');
-    menuBtn.addEventListener('click', () => this.toggleMenu());
+    if (menuBtn) {
+      menuBtn.addEventListener('click', () => this.toggleMenu());
+    }
   }
   
   handleKeyDown(e) {
@@ -222,8 +202,8 @@ class Game {
     // Initialize visible monsters
     this.initMapMonsters(mapData);
     
-    // Generate map background
-    this.state.mapBackground = this.spriteRenderer.generateMapBackground(mapData, this.tileSize);
+    // Generate map background (at base tile size, will scale when rendering)
+    this.state.mapBackground = this.spriteRenderer.generateMapBackground(mapData, 16);
     
     document.getElementById('map-name').textContent = mapData.name;
     this.checkAutoEvents();
@@ -710,7 +690,7 @@ class Game {
     
     this.updateBattleUI();
     
-    const enemySprite = this.spriteRenderer.getEnemySprite(enemyId, 4);
+    const enemySprite = this.spriteRenderer.getEnemySprite(enemyId, 6);
     const enemySpriteEl = document.getElementById('enemy-sprite');
     enemySpriteEl.innerHTML = '';
     if (enemySprite) {
@@ -1079,7 +1059,7 @@ class Game {
     
     const portrait = document.querySelector('.hero-portrait');
     portrait.innerHTML = '';
-    const heroSprite = this.spriteRenderer.getCharacterSprite('hero', 'down', 4);
+    const heroSprite = this.spriteRenderer.getCharacterSprite('hero', 'down', 5);
     if (heroSprite) portrait.appendChild(heroSprite);
     
     const itemList = document.getElementById('item-list');
@@ -1171,10 +1151,10 @@ class Game {
     
     const endingArt = document.querySelector('.ending-art');
     endingArt.innerHTML = '';
-    const heroSprite = this.spriteRenderer.getCharacterSprite('hero', 'down', 4);
-    const princessSprite = this.spriteRenderer.getCharacterSprite('princess', 'down', 4);
-    if (heroSprite) endingArt.appendChild(heroSprite);
-    if (princessSprite) endingArt.appendChild(princessSprite);
+    const endHeroSprite = this.spriteRenderer.getCharacterSprite('hero', 'down', 5);
+    const endPrincessSprite = this.spriteRenderer.getCharacterSprite('princess', 'down', 5);
+    if (endHeroSprite) endingArt.appendChild(endHeroSprite);
+    if (endPrincessSprite) endingArt.appendChild(endPrincessSprite);
   }
   
   // ============ Game Loop ============
@@ -1227,14 +1207,18 @@ class Game {
     const clampedCamX = Math.max(0, Math.min(maxCamX, camX));
     const clampedCamY = Math.max(0, Math.min(maxCamY, camY));
     
-    // Draw map background
+    // Draw map background (scaled)
     if (this.state.mapBackground) {
-      ctx.drawImage(this.state.mapBackground, -clampedCamX, -clampedCamY);
+      ctx.drawImage(this.state.mapBackground, 
+        -clampedCamX, -clampedCamY,
+        this.state.mapBackground.width * this.scale,
+        this.state.mapBackground.height * this.scale
+      );
     }
     
     // Draw exit indicators
     for (const exit of (map.exits || [])) {
-      const exitSprite = this.spriteRenderer.getTileSprite('exit_arrow');
+      const exitSprite = this.spriteRenderer.getTileSprite('exit_arrow', this.scale);
       if (exitSprite) {
         ctx.drawImage(exitSprite, 
           exit.at.x * this.tileSize - clampedCamX, 
@@ -1250,12 +1234,11 @@ class Game {
       
       let sprite;
       if (item.sprite === 'sparkle') {
-        sprite = this.spriteRenderer.getTileSprite('sparkle');
-        // Add glow effect
+        sprite = this.spriteRenderer.getTileSprite('sparkle', this.scale);
         const glow = Math.sin(Date.now() / 200) * 0.3 + 0.7;
         ctx.globalAlpha = glow;
       } else if (item.sprite === 'pot') {
-        sprite = this.spriteRenderer.getTileSprite('pot');
+        sprite = this.spriteRenderer.getTileSprite('pot', this.scale);
       }
       
       if (sprite) {
@@ -1272,7 +1255,7 @@ class Game {
       if (event.id.includes('chest')) {
         const flagToCheck = event.condition?.flag;
         const isOpen = flagToCheck && this.state.flags[flagToCheck] === true;
-        const chestSprite = this.spriteRenderer.getTileSprite(isOpen ? 'chest_open' : 'chest');
+        const chestSprite = this.spriteRenderer.getTileSprite(isOpen ? 'chest_open' : 'chest', this.scale);
         if (chestSprite) {
           ctx.drawImage(chestSprite,
             event.at.x * this.tileSize - clampedCamX,
@@ -1282,14 +1265,14 @@ class Game {
       }
     }
     
-    // Draw NPCs
+    // Draw NPCs (scaled 2x)
     for (const npc of (map.npcs || [])) {
       if (!this.checkNpcCondition(npc)) continue;
       
       const actor = GAME_DATA.actors[npc.actorId];
       if (!actor) continue;
       
-      const sprite = this.spriteRenderer.getCharacterSprite(actor.spriteKey, 'down');
+      const sprite = this.spriteRenderer.getCharacterSprite(actor.spriteKey, 'down', this.scale);
       if (sprite) {
         ctx.drawImage(sprite,
           npc.pos.x * this.tileSize - clampedCamX,
@@ -1298,19 +1281,18 @@ class Game {
       }
     }
     
-    // Draw visible monsters
+    // Draw visible monsters (scaled)
     for (const monster of this.state.monsters) {
       if (monster.defeated) continue;
       
       const enemyData = GAME_DATA.enemies[monster.enemyId];
       if (!enemyData) continue;
       
-      // Use map sprite (8x8 scaled up) or fallback to regular sprite
       let sprite;
       if (enemyData.mapSprite) {
-        sprite = this.spriteRenderer.getMapMonsterSprite(enemyData.mapSprite, 2);
+        sprite = this.spriteRenderer.getMapMonsterSprite(enemyData.mapSprite, this.scale * 2);
       } else {
-        sprite = this.spriteRenderer.getEnemySprite(monster.enemyId, 1);
+        sprite = this.spriteRenderer.getEnemySprite(monster.enemyId, this.scale);
       }
       
       if (sprite) {
@@ -1320,12 +1302,12 @@ class Game {
       }
     }
     
-    // Draw hero
-    const heroSprite = this.spriteRenderer.getCharacterSprite('hero', this.state.direction);
+    // Draw hero (scaled 2x)
+    const heroSprite = this.spriteRenderer.getCharacterSprite('hero', this.state.direction, this.scale);
     if (heroSprite) {
       let bobOffset = 0;
       if (this.state.isMoving) {
-        bobOffset = this.state.walkFrame === 1 ? -1 : 0;
+        bobOffset = this.state.walkFrame === 1 ? -2 : 0;
       }
       
       ctx.drawImage(heroSprite,
