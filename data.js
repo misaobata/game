@@ -153,12 +153,12 @@ const GAME_DATA = {
 
   // === MAPS ===
   maps: {
-    // ===== ① はじまりの村 =====
+    // ===== ① 王の間 =====
     village: {
-      name: "はじまりの村",
+      name: "王の間",
       recommendedLevel: 1,
       size: { w: 16, h: 14 },
-      tileData: "town",
+      tileData: "castle_inside",
       collision: [
         [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
         [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
@@ -188,9 +188,10 @@ const GAME_DATA = {
           at: { x: 7, y: 3 },
           condition: { flag: "met_king", equals: false },
           steps: [
-            { type: "showDialogue", speaker: "king", text: "勇者よ…よく目を覚ましてくれた。" },
-            { type: "showDialogue", speaker: "king", text: "姫は城の塔に囚われている。\n闇の騎士を倒し、姫を救ってほしい。" },
-            { type: "showDialogue", speaker: "king", text: "城の門は闇の力で封印されている…\n草原の奥で「城の鍵」を探すのだ。" },
+            { type: "showDialogue", speaker: "king", text: "勇者よ…よく来てくれた。\nわしはこの国の王じゃ。" },
+            { type: "showDialogue", speaker: "king", text: "姫は北の城の塔に囚われている。\n闇の騎士を倒し、姫を救ってほしい。" },
+            { type: "showDialogue", speaker: "king", text: "城の門は闇の力で封印されている…\n草原の宝箱で「城の鍵」を探すのだ。" },
+            { type: "showDialogue", speaker: "king", text: "鍵を見つけたら、城門の鍵穴に\n差し込むのじゃ。頼んだぞ！" },
             { type: "setFlag", flag: "met_king", value: true },
             { type: "showDialogue", speaker: "system", text: "【操作方法】\n矢印キー: 移動\nEnter/Space: 話す/調べる\nESC/M: メニュー" }
           ]
@@ -251,9 +252,20 @@ const GAME_DATA = {
         { actorId: "cat", pos: { x: 2, y: 11 } }
       ],
       decorations: [
-        { sprite: "well", x: 2, y: 3 },
+        { sprite: "throne", x: 7, y: 2 },
+        { sprite: "carpet", x: 7, y: 4 },
+        { sprite: "carpet", x: 7, y: 5 },
+        { sprite: "carpet", x: 7, y: 6 },
+        { sprite: "carpet", x: 7, y: 7 },
+        { sprite: "carpet", x: 7, y: 8 },
+        { sprite: "carpet", x: 7, y: 9 },
+        { sprite: "carpet", x: 7, y: 10 },
+        { sprite: "carpet", x: 7, y: 11 },
+        { sprite: "carpet", x: 7, y: 12 },
+        { sprite: "pot", x: 2, y: 2 },
         { sprite: "pot", x: 13, y: 2 },
-        { sprite: "pot", x: 14, y: 2 }
+        { sprite: "pot", x: 2, y: 11 },
+        { sprite: "pot", x: 13, y: 11 }
       ],
       items: []
     },
@@ -387,7 +399,8 @@ const GAME_DATA = {
           at: { x: 6, y: 2 },
           condition: { flag: "got_castle_key", equals: false },
           steps: [
-            { type: "showDialogue", speaker: "system", text: "門は闇の力で封印されている…\n鍵がなければ開けられない。" }
+            { type: "showDialogue", speaker: "system", text: "大きな城門だ。中央に鍵穴がある。" },
+            { type: "showDialogue", speaker: "system", text: "闇の力で封印されている…\n鍵がなければ開けられない。" }
           ]
         },
         {
@@ -396,7 +409,8 @@ const GAME_DATA = {
           at: { x: 7, y: 2 },
           condition: { flag: "got_castle_key", equals: false },
           steps: [
-            { type: "showDialogue", speaker: "system", text: "門は闇の力で封印されている…\n鍵がなければ開けられない。" }
+            { type: "showDialogue", speaker: "system", text: "大きな城門だ。中央に鍵穴がある。" },
+            { type: "showDialogue", speaker: "system", text: "闇の力で封印されている…\n鍵がなければ開けられない。" }
           ]
         },
         // 城門（鍵あり）- 調べたら入れる
@@ -406,7 +420,8 @@ const GAME_DATA = {
           at: { x: 6, y: 2 },
           condition: { flag: "got_castle_key", equals: true },
           steps: [
-            { type: "showDialogue", speaker: "system", text: "城の鍵を使った！\n封印が解けた！" },
+            { type: "showDialogue", speaker: "system", text: "鍵穴に城の鍵を差し込んだ！" },
+            { type: "showDialogue", speaker: "system", text: "ガチャン！封印が解けた！\n城門が開く…" },
             { type: "changeMap", mapId: "castle_hall", spawn: { x: 8, y: 10 } }
           ]
         },
@@ -416,14 +431,17 @@ const GAME_DATA = {
           at: { x: 7, y: 2 },
           condition: { flag: "got_castle_key", equals: true },
           steps: [
-            { type: "showDialogue", speaker: "system", text: "城の鍵を使った！\n封印が解けた！" },
+            { type: "showDialogue", speaker: "system", text: "鍵穴に城の鍵を差し込んだ！" },
+            { type: "showDialogue", speaker: "system", text: "ガチャン！封印が解けた！\n城門が開く…" },
             { type: "changeMap", mapId: "castle_hall", spawn: { x: 8, y: 10 } }
           ]
         }
       ],
       decorations: [
         { sprite: "gate", x: 6, y: 1 },
-        { sprite: "gate", x: 7, y: 1 }
+        { sprite: "gate", x: 7, y: 1 },
+        { sprite: "gate", x: 6, y: 2 },
+        { sprite: "gate", x: 7, y: 2 }
       ],
       npcs: [],
       monsters: [
