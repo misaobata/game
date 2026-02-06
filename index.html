@@ -9,133 +9,114 @@
 </head>
 <body>
   <div id="game-container">
-    <canvas id="game-canvas" width="480" height="416"></canvas>
+    <canvas id="game-canvas" width="512" height="448"></canvas>
     
     <!-- UI Overlay -->
     <div id="ui-overlay">
       <div id="map-info">
-        <span id="map-name"></span>
+        <span id="map-name">はじまりの村</span>
       </div>
-      
       <div id="top-right-controls">
         <button id="btn-menu" class="ui-btn">MENU</button>
       </div>
     </div>
     
-    <!-- Dialogue Box -->
-    <div id="dialogue-box" class="ui-window hidden">
+    <!-- Dialogue -->
+    <div id="dialogue-box" class="hidden">
       <div id="dialogue-speaker"></div>
       <div id="dialogue-text"></div>
-      <div class="dialogue-hint">▼ クリック or Enter で次へ</div>
+      <div class="dialogue-hint">▼ Enter / クリック</div>
     </div>
     
     <!-- Map Screen -->
     <div id="map-screen" class="screen active"></div>
     
     <!-- Battle Screen -->
-    <div id="battle-screen" class="screen hidden">
-      <div class="battle-ui">
-        <div class="enemy-area">
-          <div id="enemy-sprite"></div>
-          <div class="enemy-info">
-            <span id="enemy-name"></span>
-            <div class="hp-bar enemy-hp"><div class="hp-fill"></div></div>
+    <div id="battle-screen" class="screen">
+      <div class="battle-bg"></div>
+      
+      <div class="enemy-area">
+        <div id="enemy-sprite"></div>
+        <div class="enemy-info">
+          <span id="enemy-name">スライム</span>
+          <div class="hp-bar enemy-hp">
+            <div class="hp-fill"></div>
           </div>
         </div>
-        <div class="hero-area">
-          <div class="hero-info">
-            <div class="hero-stats">
-              <p>HP: <span id="hero-hp-text"></span></p>
-              <p>MP: <span id="hero-mp-text"></span></p>
-            </div>
-            <div class="hp-bar hero-hp"><div class="hp-fill"></div></div>
-            <div class="mp-bar"><div class="mp-fill"></div></div>
-          </div>
-          <div class="battle-commands">
-            <button class="battle-cmd ui-btn" data-cmd="attack">たたかう</button>
-            <button class="battle-cmd ui-btn" data-cmd="skill">とくぎ</button>
-            <button class="battle-cmd ui-btn" data-cmd="item">アイテム</button>
-            <button class="battle-cmd ui-btn" data-cmd="defend">ぼうぎょ</button>
-          </div>
-        </div>
-        <div id="battle-message" class="battle-message-box"></div>
-        <div id="battle-effect" class="battle-effect"></div>
       </div>
+      
+      <div class="battle-bottom">
+        <div class="hero-info">
+          <p><span class="label">HP:</span> <span class="value" id="hero-hp-text">40/40</span></p>
+          <div class="hp-bar hero-hp"><div class="hp-fill"></div></div>
+          <p><span class="label">MP:</span> <span class="value" id="hero-mp-text">15/15</span></p>
+          <div class="mp-bar"><div class="mp-fill"></div></div>
+        </div>
+        
+        <div class="battle-commands">
+          <button class="battle-cmd ui-btn" data-cmd="attack">⚔ たたかう</button>
+          <button class="battle-cmd ui-btn" data-cmd="skill">✨ とくぎ</button>
+          <button class="battle-cmd ui-btn" data-cmd="item">🧪 アイテム</button>
+          <button class="battle-cmd ui-btn" data-cmd="defend">🛡 ぼうぎょ</button>
+        </div>
+      </div>
+      
+      <div id="battle-message">スライムが現れた！</div>
+      <div id="battle-effect"></div>
     </div>
     
     <!-- Menu Screen -->
-    <div id="menu-screen" class="screen hidden">
-      <div class="menu-window ui-window">
-        <h2 class="window-title">メニュー</h2>
+    <div id="menu-screen" class="screen">
+      <div class="menu-window">
+        <h2 class="window-title">📋 メニュー</h2>
         <div class="menu-content">
           <ul class="menu-items">
             <li><button class="menu-item ui-btn active" data-menu="status">ステータス</button></li>
-            <li><button class="menu-item ui-btn" data-menu="party">パーティ</button></li>
             <li><button class="menu-item ui-btn" data-menu="item">アイテム</button></li>
-            <li><button class="menu-item ui-btn" data-menu="quest">クエスト</button></li>
             <li><button class="menu-item ui-btn" data-menu="equip">そうび</button></li>
             <li><button class="menu-item ui-btn" data-menu="close">とじる</button></li>
           </ul>
           <div class="menu-views">
-            <!-- Status View -->
             <div id="status-view" class="menu-view active">
-              <div class="hero-portrait"></div>
-              <p>レベル: <span id="stat-level"></span></p>
-              <p>HP: <span id="stat-hp"></span>/<span id="stat-maxhp"></span></p>
-              <p>MP: <span id="stat-mp"></span>/<span id="stat-maxmp"></span></p>
-              <p>攻撃力: <span id="stat-atk"></span></p>
-              <p>防御力: <span id="stat-def"></span></p>
-              <p>素早さ: <span id="stat-spd"></span></p>
-              <p>経験値: <span id="stat-exp"></span></p>
-              <p>ゴールド: <span id="stat-gold"></span>G</p>
+              <h3>勇者のステータス</h3>
+              <p>レベル: <span id="stat-level">1</span></p>
+              <p>HP: <span id="stat-hp">40</span> / <span id="stat-maxhp">40</span></p>
+              <p>MP: <span id="stat-mp">15</span> / <span id="stat-maxmp">15</span></p>
+              <p>攻撃力: <span id="stat-atk">8</span></p>
+              <p>防御力: <span id="stat-def">5</span></p>
+              <p>経験値: <span id="stat-exp">0</span></p>
+              <p>ゴールド: <span id="stat-gold">50</span> G</p>
             </div>
-            
-            <!-- Party View -->
-            <div id="party-view" class="menu-view">
-              <h3>パーティメンバー</h3>
-              <ul id="party-list"></ul>
-            </div>
-            
-            <!-- Item View -->
             <div id="item-view" class="menu-view">
               <h3>アイテム一覧</h3>
               <ul id="item-list"></ul>
-              <p class="item-hint">クリックで使用</p>
+              <p style="color:#666;font-size:11px;margin-top:10px;">※クリックで使用</p>
             </div>
-            
-            <!-- Quest View -->
-            <div id="quest-view" class="menu-view">
-              <h3>進行中のクエスト</h3>
-              <ul id="quest-list"></ul>
-            </div>
-            
-            <!-- Equipment View -->
             <div id="equip-view" class="menu-view">
               <h3>装備</h3>
-              <p>武器: <span id="equip-weapon"></span></p>
-              <p>防具: <span id="equip-armor"></span></p>
+              <p>武器: <span id="equip-weapon">木の剣</span></p>
+              <p>防具: <span id="equip-armor">布の服</span></p>
             </div>
           </div>
         </div>
       </div>
     </div>
     
-    <!-- Game Over Screen -->
-    <div id="gameover-screen" class="screen hidden">
-      <div class="gameover-window ui-window">
-        <h2 class="window-title">GAME OVER</h2>
+    <!-- Game Over -->
+    <div id="gameover-screen" class="screen">
+      <div class="gameover-window">
+        <h2 class="window-title">💀 GAME OVER</h2>
         <p>勇者は倒れた…</p>
-        <button id="btn-retry" class="ui-btn">もう一度</button>
+        <button id="btn-retry" class="ui-btn">🔄 もう一度</button>
       </div>
     </div>
     
-    <!-- Ending Screen -->
-    <div id="ending-screen" class="screen hidden">
-      <div class="ending-window ui-window">
-        <h2 id="ending-title" class="window-title"></h2>
-        <div class="ending-art"></div>
+    <!-- Ending -->
+    <div id="ending-screen" class="screen">
+      <div class="ending-window">
+        <h2 id="ending-title" class="window-title">🏆 クリア！</h2>
         <p id="ending-text"></p>
-        <button id="btn-title" class="ui-btn">タイトルへ</button>
+        <button id="btn-title" class="ui-btn">🏠 タイトルへ</button>
       </div>
     </div>
   </div>

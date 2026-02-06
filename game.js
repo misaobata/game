@@ -1,6 +1,6 @@
 // ============================================
 // ピクセルの王国と最後の塔
-// Game Engine - Fixed Version
+// Game Engine - Complete Rewrite
 // ============================================
 
 class Game {
@@ -9,814 +9,677 @@ class Game {
     this.ctx = this.canvas.getContext('2d');
     this.ctx.imageSmoothingEnabled = false;
     
-    // Core systems
     this.spriteRenderer = new SpriteRenderer();
     this.audio = new AudioSystem();
     
-    // Display settings
+    // Display
     this.tileSize = 16;
-    this.displayScale = 2;
-    this.scaledTileSize = this.tileSize * this.displayScale;
+    this.scale = 2;
+    this.scaledTile = this.tileSize * this.scale;
     
-    // Movement settings - MUCH SLOWER for precise control
-    this.moveSpeed = 0.004; // Very slow: tiles per ms
-    this.moveCooldown = 150; // ms between moves
-    this.lastInputTime = 0;
-    this.currentMoveTime = 0;
-    this.startPosition = { x: 0, y: 0 };
-    this.targetPosition = { x: 0, y: 0 };
+    // Movement - VERY SLOW
+    this.moveTime = 250; // ms to move one tile
+    this.moveCooldown = 100;
+    this.lastMoveTime = 0;
+    this.moving = false;
+    this.moveProgress = 0;
+    this.fromPos = { x: 0, y: 0 };
+    this.toPos = { x: 0, y: 0 };
     
-    // Input state
-    this.input = { up: false, down: false, left: false, right: false };
-    this.inputHeld = false;
+    // Input
+    this.keys = {};
     
-    // Game state
-    this.state = {
-      screen: 'map',
-      currentMapId: null,
-      currentMap: null,
-      mapBackground: null,
-      position: { x: 0, y: 0 },
-      direction: 'down',
-      isMoving: false,
-      flags: { ...GAME_DATA.flags },
-      party: [],
-      partyStats: {},
-      inventory: [],
-      gold: 100,
-      battleState: null,
-      currentDialogue: null,
-      eventSteps: null
-    };
+    // State
+    this.screen = 'map'; // map, battle, menu, gameover, ending
+    this.mapId = null;
+    this.map = null;
+    this.mapBg = null;
+    this.pos = { x: 0, y: 0 };
+    this.dir = 'down';
+    this.flags = {};
+    this.hero = null;
+    this.inventory = [];
+    this.gold = 0;
+    this.dialogue = null;
+    this.eventQueue = [];
+    
+    // Monsters
+    this.monsters = {};
+    this.killedMonsters = new Set();
+    
+    // Battle
+    this.battle = null;
+    this.battleEvents = null;
     
     this.lastTime = 0;
-    this.defeatedMonsters = new Set();
-    this.monsterPositions = {};
-    this.monsterMoveTimer = 0;
     
     this.init();
   }
   
   init() {
-    this.initParty();
+    console.log('Game initializing...');
+    
+    // Copy flags
+    this.flags = { ...GAME_DATA.flags };
+    
+    // Init hero
+    const heroData = GAME_DATA.actors.hero;
+    this.hero = {
+      ...JSON.parse(JSON.stringify(heroData.stats)),
+      equipment: { ...heroData.equipment },
+      skills: [...heroData.skills]
+    };
+    this.inventory = JSON.parse(JSON.stringify(heroData.inventory || []));
+    this.gold = heroData.stats.gold || 50;
+    
+    // Setup
     this.setupInput();
     this.setupUI();
-    this.loadMap(GAME_DATA.meta.starting.mapId, GAME_DATA.meta.starting.spawn);
-    requestAnimationFrame((t) => this.gameLoop(t));
-  }
-  
-  initParty() {
-    const heroData = GAME_DATA.actors.hero;
-    this.state.party = ['hero'];
-    this.state.partyStats = {
-      hero: {
-        ...JSON.parse(JSON.stringify(heroData.stats)),
-        equipment: { ...heroData.equipment },
-        skills: [...heroData.skills]
-      }
-    };
-    this.state.inventory = JSON.parse(JSON.stringify(heroData.inventory || []));
-    this.state.gold = heroData.stats.gold || 100;
+    
+    // Load starting map
+    const start = GAME_DATA.meta.starting;
+    this.loadMap(start.mapId, start.spawn);
+    
+    // Start loop
+    requestAnimationFrame(t => this.loop(t));
+    
+    console.log('Game initialized!');
   }
   
   setupInput() {
-    document.addEventListener('keydown', (e) => this.handleKeyDown(e));
-    document.addEventListener('keyup', (e) => this.handleKeyUp(e));
+    window.addEventListener('keydown', e => {
+      this.keys[e.key.toLowerCase()] = true;
+      this.handleKey(e);
+    });
+    window.addEventListener('keyup', e => {
+      this.keys[e.key.toLowerCase()] = false;
+    });
+    
+    // Audio resume
     document.addEventListener('click', () => this.audio.resume(), { once: true });
-    document.addEventListener('keydown', () => this.audio.resume(), { once: true });
   }
   
-  handleKeyDown(e) {
+  handleKey(e) {
     const key = e.key.toLowerCase();
     
-    if (this.state.screen === 'map' && !this.state.currentDialogue) {
-      if (key === 'arrowup' || key === 'w') { this.input.up = true; e.preventDefault(); }
-      if (key === 'arrowdown' || key === 's') { this.input.down = true; e.preventDefault(); }
-      if (key === 'arrowleft' || key === 'a') { this.input.left = true; e.preventDefault(); }
-      if (key === 'arrowright' || key === 'd') { this.input.right = true; e.preventDefault(); }
+    if (this.dialogue) {
       if (key === 'enter' || key === ' ') {
         e.preventDefault();
-        this.handleAction();
+        this.closeDialogue();
+      }
+      return;
+    }
+    
+    if (this.screen === 'map') {
+      if (key === 'enter' || key === ' ') {
+        e.preventDefault();
+        this.doAction();
       }
       if (key === 'escape' || key === 'm') {
-        this.toggleMenu();
+        this.openMenu();
       }
-    } else if (this.state.currentDialogue) {
-      if (key === 'enter' || key === ' ') {
-        e.preventDefault();
-        this.advanceDialogue();
-      }
-    } else if (this.state.screen === 'menu') {
+    }
+    else if (this.screen === 'battle') {
+      if (key === '1') this.battleCommand('attack');
+      if (key === '2') this.battleCommand('skill');
+      if (key === '3') this.battleCommand('item');
+      if (key === '4') this.battleCommand('defend');
+    }
+    else if (this.screen === 'menu') {
       if (key === 'escape' || key === 'm') {
         this.closeMenu();
       }
-    } else if (this.state.screen === 'battle') {
-      // Battle controls
-      if (key === '1') this.handleBattleCommand('attack');
-      if (key === '2') this.handleBattleCommand('skill');
-      if (key === '3') this.handleBattleCommand('item');
-      if (key === '4') this.handleBattleCommand('defend');
     }
   }
   
-  handleKeyUp(e) {
-    const key = e.key.toLowerCase();
-    if (key === 'arrowup' || key === 'w') this.input.up = false;
-    if (key === 'arrowdown' || key === 's') this.input.down = false;
-    if (key === 'arrowleft' || key === 'a') this.input.left = false;
-    if (key === 'arrowright' || key === 'd') this.input.right = false;
-  }
-  
   setupUI() {
-    document.getElementById('btn-menu')?.addEventListener('click', () => this.toggleMenu());
+    // Menu button
+    document.getElementById('btn-menu').onclick = () => this.openMenu();
     
+    // Battle commands
     document.querySelectorAll('.battle-cmd').forEach(btn => {
-      btn.addEventListener('click', () => this.handleBattleCommand(btn.dataset.cmd));
+      btn.onclick = () => this.battleCommand(btn.dataset.cmd);
     });
     
+    // Menu items
     document.querySelectorAll('.menu-item').forEach(btn => {
-      btn.addEventListener('click', () => this.selectMenuItem(btn.dataset.menu));
+      btn.onclick = () => this.menuSelect(btn.dataset.menu);
     });
     
-    document.getElementById('btn-retry')?.addEventListener('click', () => location.reload());
-    document.getElementById('btn-title')?.addEventListener('click', () => location.reload());
-    document.getElementById('dialogue-box')?.addEventListener('click', () => this.advanceDialogue());
+    // Retry/Title
+    document.getElementById('btn-retry').onclick = () => location.reload();
+    document.getElementById('btn-title').onclick = () => location.reload();
+    
+    // Dialogue click
+    document.getElementById('dialogue-box').onclick = () => this.closeDialogue();
   }
   
   // === MAP ===
   
   loadMap(mapId, spawn) {
-    const map = GAME_DATA.maps[mapId];
-    if (!map) {
+    console.log(`Loading map: ${mapId}`);
+    
+    const mapData = GAME_DATA.maps[mapId];
+    if (!mapData) {
       console.error(`Map not found: ${mapId}`);
       return;
     }
     
-    console.log(`Loading map: ${mapId}`);
+    this.mapId = mapId;
+    this.map = { ...mapData, id: mapId };
+    this.pos = { x: spawn.x, y: spawn.y };
+    this.moving = false;
     
-    this.state.currentMapId = mapId;
-    this.state.currentMap = { ...map, id: mapId };
-    this.state.position = { x: spawn.x, y: spawn.y };
-    this.state.isMoving = false;
+    // Generate background
+    this.mapBg = this.spriteRenderer.generateMapBackground(this.map, this.scale);
     
-    // Generate map background with tiles
-    this.state.mapBackground = this.spriteRenderer.generateMapBackground(map, this.displayScale);
-    
-    // Initialize monster positions
-    this.initMonsterPositions();
-    
-    // Update UI
-    document.getElementById('map-name').textContent = `${map.name} (Lv.${map.recommendedLevel})`;
-    
-    // Check auto events
-    setTimeout(() => this.checkAutoEvents(), 200);
-  }
-  
-  initMonsterPositions() {
-    const map = this.state.currentMap;
-    this.monsterPositions = {};
-    
-    if (map.monsters) {
-      map.monsters.forEach((monster, idx) => {
-        const key = `${map.id}_${idx}`;
-        if (!this.defeatedMonsters.has(key) && this.checkCondition(monster.condition)) {
-          this.monsterPositions[key] = { x: monster.pos.x, y: monster.pos.y };
+    // Init monsters
+    this.monsters = {};
+    if (mapData.monsters) {
+      mapData.monsters.forEach((m, i) => {
+        const key = `${mapId}_${i}`;
+        if (!this.killedMonsters.has(key) && this.checkCond(m.condition)) {
+          this.monsters[key] = { ...m, x: m.pos.x, y: m.pos.y };
         }
       });
     }
+    
+    // Update UI
+    document.getElementById('map-name').textContent = 
+      `${mapData.name} (推奨Lv.${mapData.recommendedLevel})`;
+    
+    // Auto events
+    setTimeout(() => this.checkAutoEvents(), 300);
+  }
+  
+  checkCond(cond) {
+    if (!cond) return true;
+    let ok = true;
+    if (cond.flag !== undefined) {
+      ok = ok && (this.flags[cond.flag] === cond.equals);
+    }
+    if (cond.flag2 !== undefined) {
+      ok = ok && (this.flags[cond.flag2] === cond.equals2);
+    }
+    return ok;
   }
   
   // === MOVEMENT ===
   
-  move(direction) {
-    if (this.state.isMoving || this.state.screen !== 'map' || this.state.currentDialogue) return;
+  tryMove(dir) {
+    if (this.moving || this.screen !== 'map' || this.dialogue) return;
     
     const now = Date.now();
-    if (now - this.lastInputTime < this.moveCooldown) return;
-    this.lastInputTime = now;
+    if (now - this.lastMoveTime < this.moveCooldown) return;
     
-    const vectors = GAME_DATA.constants.directionVectors;
-    const vector = vectors[direction];
+    this.dir = dir;
     
-    this.state.direction = direction;
-    
-    const currentX = Math.round(this.state.position.x);
-    const currentY = Math.round(this.state.position.y);
-    const newX = currentX + vector.x;
-    const newY = currentY + vector.y;
+    const vec = GAME_DATA.constants.directionVectors[dir];
+    const nx = Math.round(this.pos.x) + vec.x;
+    const ny = Math.round(this.pos.y) + vec.y;
     
     // Check exit
-    const exit = this.checkExit(newX, newY);
-    if (exit) {
-      if (!exit.condition || this.checkCondition(exit.condition)) {
-        this.audio.step();
-        this.loadMap(exit.toMapId, exit.spawn);
-        return;
-      }
+    const exit = this.getExit(nx, ny);
+    if (exit && this.checkCond(exit.condition)) {
+      this.audio.step();
+      this.loadMap(exit.toMapId, exit.spawn);
+      return;
     }
     
-    // Check collision with walls/NPCs
-    if (!this.checkCollision(newX, newY)) {
-      // Check monster collision BEFORE moving
-      const monsterKey = this.checkMonsterAt(newX, newY);
-      if (monsterKey) {
-        this.audio.encounter();
-        const map = this.state.currentMap;
-        const monsterIdx = parseInt(monsterKey.split('_').pop());
-        const monster = map.monsters[monsterIdx];
-        this.startBattle(monster.enemyId, 1, monsterKey, monster.boss);
-        return;
-      }
-      
-      // Start movement
-      this.state.isMoving = true;
-      this.startPosition = { x: currentX, y: currentY };
-      this.targetPosition = { x: newX, y: newY };
-      this.currentMoveTime = 0;
-      this.audio.step();
+    // Check collision
+    if (this.isBlocked(nx, ny)) return;
+    
+    // Check monster
+    const monsterKey = this.getMonsterAt(nx, ny);
+    if (monsterKey) {
+      console.log(`Monster encounter: ${monsterKey}`);
+      const m = this.monsters[monsterKey];
+      this.startBattle(m.enemyId, monsterKey, m.boss);
+      return;
     }
+    
+    // Move
+    this.moving = true;
+    this.moveProgress = 0;
+    this.fromPos = { x: Math.round(this.pos.x), y: Math.round(this.pos.y) };
+    this.toPos = { x: nx, y: ny };
+    this.lastMoveTime = now;
+    this.audio.step();
   }
   
-  checkCollision(x, y) {
-    const map = this.state.currentMap;
-    if (!map) return true;
+  isBlocked(x, y) {
+    if (!this.map) return true;
+    if (x < 0 || y < 0 || x >= this.map.size.w || y >= this.map.size.h) return true;
+    if (this.map.collision[y]?.[x] === 1) return true;
     
-    if (x < 0 || y < 0 || x >= map.size.w || y >= map.size.h) return true;
-    if (map.collision[y]?.[x] === 1) return true;
-    
-    // NPC collision
-    if (map.npcs) {
-      for (const npc of map.npcs) {
-        if (!this.checkCondition(npc.condition)) continue;
+    // NPCs
+    if (this.map.npcs) {
+      for (const npc of this.map.npcs) {
+        if (!this.checkCond(npc.condition)) continue;
         if (npc.pos.x === x && npc.pos.y === y) return true;
       }
     }
-    
     return false;
   }
   
-  checkMonsterAt(x, y) {
-    const map = this.state.currentMap;
-    if (!map?.monsters) return null;
-    
-    for (let idx = 0; idx < map.monsters.length; idx++) {
-      const monster = map.monsters[idx];
-      const key = `${map.id}_${idx}`;
-      const pos = this.monsterPositions[key];
-      
-      if (!pos || this.defeatedMonsters.has(key)) continue;
-      if (!this.checkCondition(monster.condition)) continue;
-      
-      if (pos.x === x && pos.y === y) {
-        return key;
-      }
+  getExit(x, y) {
+    if (!this.map?.exits) return null;
+    return this.map.exits.find(e => e.at.x === x && e.at.y === y);
+  }
+  
+  getMonsterAt(x, y) {
+    for (const [key, m] of Object.entries(this.monsters)) {
+      if (m.x === x && m.y === y) return key;
     }
     return null;
   }
   
-  checkExit(x, y) {
-    const map = this.state.currentMap;
-    if (!map?.exits) return null;
+  doAction() {
+    if (this.moving) return;
     
-    for (const exit of map.exits) {
-      if (exit.at.x === x && exit.at.y === y) {
-        return exit;
-      }
-    }
-    return null;
-  }
-  
-  checkCondition(condition) {
-    if (!condition) return true;
+    const vec = GAME_DATA.constants.directionVectors[this.dir];
+    const tx = Math.round(this.pos.x) + vec.x;
+    const ty = Math.round(this.pos.y) + vec.y;
     
-    let result = true;
-    if (condition.flag !== undefined) {
-      result = result && (this.state.flags[condition.flag] === condition.equals);
-    }
-    if (condition.flag2 !== undefined) {
-      result = result && (this.state.flags[condition.flag2] === condition.equals2);
-    }
-    return result;
-  }
-  
-  handleAction() {
-    if (this.state.isMoving) return;
-    
-    const vectors = GAME_DATA.constants.directionVectors;
-    const vector = vectors[this.state.direction];
-    const targetX = Math.round(this.state.position.x) + vector.x;
-    const targetY = Math.round(this.state.position.y) + vector.y;
-    
-    this.checkActionEvents(targetX, targetY);
-  }
-  
-  // === EVENTS ===
-  
-  checkAutoEvents() {
-    const map = this.state.currentMap;
-    if (!map?.events) return;
-    
-    for (const event of map.events) {
-      if (event.trigger === 'auto' && this.checkCondition(event.condition)) {
-        this.runEvent(event);
-        break;
-      }
-    }
-  }
-  
-  checkTouchEvents(x, y) {
-    const map = this.state.currentMap;
-    if (!map?.events) return;
-    
-    for (const event of map.events) {
-      if (event.trigger === 'touch' && event.at.x === x && event.at.y === y) {
-        if (this.checkCondition(event.condition)) {
-          this.runEvent(event);
-          return;
-        }
-      }
-    }
-    
-    // Check item pickup
-    this.checkItemPickup(x, y);
-  }
-  
-  checkActionEvents(x, y) {
-    const map = this.state.currentMap;
-    if (!map?.events) return;
-    
-    for (const event of map.events) {
-      if (event.trigger === 'action' && event.at.x === x && event.at.y === y) {
-        if (this.checkCondition(event.condition)) {
-          this.audio.select();
-          this.runEvent(event);
-          return;
-        }
-      }
-    }
-    
-    // Check item/chest action
-    this.checkItemAction(x, y);
-  }
-  
-  checkItemPickup(x, y) {
-    const map = this.state.currentMap;
-    if (!map?.items) return;
-    
-    for (const item of map.items) {
-      if (item.pos.x === x && item.pos.y === y && item.sprite === 'sparkle') {
-        const flagKey = `item_${map.id}_${item.id}`;
-        if (!this.state.flags[flagKey]) {
-          this.state.flags[flagKey] = true;
-          if (item.itemId) {
-            this.giveItem(item.itemId, 1);
-            const itemData = GAME_DATA.items[item.itemId];
-            this.audio.getItem();
-            this.showDialogue('system', `${itemData?.name || item.itemId}を手に入れた！`);
+    // Check events
+    if (this.map?.events) {
+      for (const ev of this.map.events) {
+        if (ev.trigger === 'action' && ev.at.x === tx && ev.at.y === ty) {
+          if (this.checkCond(ev.condition)) {
+            this.audio.select();
+            this.runEvent(ev.steps);
+            return;
           }
         }
       }
     }
   }
   
-  checkItemAction(x, y) {
-    const map = this.state.currentMap;
-    if (!map?.items) return;
-    
-    for (const item of map.items) {
-      if (item.pos.x === x && item.pos.y === y) {
-        const flagKey = `item_${map.id}_${item.id}`;
-        if (this.state.flags[flagKey]) continue;
-        
-        if (item.sprite === 'pot') {
-          this.audio.select();
-          // Pot already handled by events
-        } else if (item.sprite === 'chest') {
-          this.audio.chest();
-          // Chest already handled by events
+  // === EVENTS ===
+  
+  checkAutoEvents() {
+    if (!this.map?.events) return;
+    for (const ev of this.map.events) {
+      if (ev.trigger === 'auto' && this.checkCond(ev.condition)) {
+        this.runEvent(ev.steps);
+        return;
+      }
+    }
+  }
+  
+  checkTouchEvents(x, y) {
+    if (!this.map?.events) return;
+    for (const ev of this.map.events) {
+      if (ev.trigger === 'touch' && ev.at.x === x && ev.at.y === y) {
+        if (this.checkCond(ev.condition)) {
+          this.runEvent(ev.steps);
+          return;
         }
       }
     }
   }
   
-  runEvent(event) {
-    this.state.eventSteps = [...event.steps];
-    this.processNextEventStep();
+  runEvent(steps) {
+    this.eventQueue = [...steps];
+    this.nextEvent();
   }
   
-  processNextEventStep() {
-    if (!this.state.eventSteps || this.state.eventSteps.length === 0) {
-      this.state.eventSteps = null;
+  nextEvent() {
+    if (this.eventQueue.length === 0) {
+      this.eventQueue = null;
       return;
     }
     
-    const step = this.state.eventSteps.shift();
+    const step = this.eventQueue.shift();
     
     switch (step.type) {
       case 'showDialogue':
-        this.showDialogue(step.speaker, step.text, () => this.processNextEventStep());
+        this.showDialogue(step.speaker, step.text);
         break;
-        
       case 'setFlag':
-        this.state.flags[step.flag] = step.value;
-        this.processNextEventStep();
+        this.flags[step.flag] = step.value;
+        this.nextEvent();
         break;
-        
       case 'giveItem':
         this.giveItem(step.itemId, step.qty);
         this.audio.getItem();
-        this.processNextEventStep();
+        this.nextEvent();
         break;
-        
       case 'startBattle':
         const battle = GAME_DATA.battles[step.battleId];
         if (battle) {
-          this.state.pendingBattleVictory = battle.victory;
-          this.state.pendingBattleDefeat = battle.defeat;
-          const enemy = battle.enemies[0];
-          this.startBattle(enemy.enemyId, enemy.qty, null, true);
+          this.battleEvents = { victory: battle.victory, defeat: battle.defeat };
+          this.startBattle(battle.enemies[0].enemyId, null, true);
         }
         break;
-        
       case 'endGame':
         this.showEnding(step.endingId);
         break;
-        
       case 'gameOver':
         this.showGameOver();
         break;
-        
       default:
-        this.processNextEventStep();
+        this.nextEvent();
     }
   }
   
   // === DIALOGUE ===
   
-  showDialogue(speaker, text, callback) {
-    const speakerName = speaker === 'system' ? '' : 
+  showDialogue(speaker, text) {
+    const name = speaker === 'system' ? '' :
       (GAME_DATA.actors[speaker]?.name || GAME_DATA.enemies[speaker]?.name || speaker);
     
-    this.state.currentDialogue = { speaker: speakerName, text, callback };
+    this.dialogue = { speaker: name, text };
     
-    const box = document.getElementById('dialogue-box');
-    const speakerEl = document.getElementById('dialogue-speaker');
-    const textEl = document.getElementById('dialogue-text');
+    document.getElementById('dialogue-speaker').textContent = name;
+    document.getElementById('dialogue-text').textContent = '';
+    document.getElementById('dialogue-box').classList.remove('hidden');
     
-    speakerEl.textContent = speakerName;
-    textEl.textContent = '';
-    box.classList.remove('hidden');
-    
-    // Typewriter effect
+    // Typewriter
     let i = 0;
-    const typewriter = setInterval(() => {
+    const el = document.getElementById('dialogue-text');
+    const interval = setInterval(() => {
       if (i < text.length) {
-        textEl.textContent += text[i];
+        el.textContent += text[i];
         if (i % 3 === 0) this.audio.text();
         i++;
       } else {
-        clearInterval(typewriter);
+        clearInterval(interval);
       }
-    }, 40);
-    
-    this.state.typewriterInterval = typewriter;
+    }, 35);
+    this.typewriter = interval;
   }
   
-  advanceDialogue() {
-    if (!this.state.currentDialogue) return;
+  closeDialogue() {
+    if (!this.dialogue) return;
     
-    if (this.state.typewriterInterval) {
-      clearInterval(this.state.typewriterInterval);
-      this.state.typewriterInterval = null;
+    if (this.typewriter) {
+      clearInterval(this.typewriter);
+      this.typewriter = null;
     }
     
-    const callback = this.state.currentDialogue.callback;
-    this.state.currentDialogue = null;
-    
+    this.dialogue = null;
     document.getElementById('dialogue-box').classList.add('hidden');
     this.audio.select();
     
-    if (callback) callback();
+    if (this.eventQueue) {
+      this.nextEvent();
+    }
   }
   
   // === BATTLE ===
   
-  startBattle(enemyId, count = 1, monsterKey = null, isBoss = false) {
-    const enemy = GAME_DATA.enemies[enemyId];
-    if (!enemy) {
+  startBattle(enemyId, monsterKey, isBoss = false) {
+    console.log(`Starting battle: ${enemyId}`);
+    
+    const enemyData = GAME_DATA.enemies[enemyId];
+    if (!enemyData) {
       console.error(`Enemy not found: ${enemyId}`);
       return;
     }
     
-    console.log(`Starting battle with: ${enemy.name}`);
-    
-    this.state.screen = 'battle';
-    this.state.battleState = {
-      enemies: [{
-        ...JSON.parse(JSON.stringify(enemy)),
+    this.screen = 'battle';
+    this.battle = {
+      enemy: {
         id: enemyId,
-        hp: enemy.stats.hp,
-        maxHp: enemy.stats.maxHp
-      }],
-      turn: 'player',
+        name: enemyData.name,
+        hp: enemyData.stats.hp,
+        maxHp: enemyData.stats.maxHp,
+        stats: { ...enemyData.stats },
+        ai: enemyData.ai,
+        exp: enemyData.exp,
+        gold: enemyData.gold,
+        drops: enemyData.drops
+      },
       monsterKey,
       isBoss,
-      defending: {}
+      turn: 'player',
+      defending: false
     };
     
     this.showScreen('battle-screen');
     this.updateBattleUI();
-    this.enableBattleCommands(true);
+    this.enableBattleCmd(true);
     
     if (isBoss) {
       this.audio.bossAppear();
+    } else {
+      this.audio.encounter();
     }
     
-    this.showBattleMessage(`${enemy.name}が現れた！`);
+    this.battleMsg(`${enemyData.name}が現れた！`);
   }
   
   updateBattleUI() {
-    const bs = this.state.battleState;
-    if (!bs) return;
+    if (!this.battle) return;
     
-    const enemy = bs.enemies[0];
-    const hero = this.getTotalStats('hero');
+    const e = this.battle.enemy;
+    const h = this.getHeroStats();
     
     // Enemy
-    document.getElementById('enemy-name').textContent = enemy.name;
-    const enemyHpFill = document.querySelector('.enemy-hp .hp-fill');
-    const hpPercent = (enemy.hp / enemy.maxHp) * 100;
-    enemyHpFill.style.width = `${hpPercent}%`;
-    enemyHpFill.className = 'hp-fill' + (hpPercent < 25 ? ' low' : hpPercent < 50 ? ' mid' : '');
+    document.getElementById('enemy-name').textContent = e.name;
+    const eHpPct = (e.hp / e.maxHp) * 100;
+    const eHpFill = document.querySelector('.enemy-hp .hp-fill');
+    eHpFill.style.width = `${eHpPct}%`;
+    eHpFill.className = 'hp-fill' + (eHpPct < 25 ? ' low' : eHpPct < 50 ? ' mid' : '');
     
     // Enemy sprite
-    const enemySprite = this.spriteRenderer.getEnemySprite(enemy.id, 4);
-    const enemySpriteEl = document.getElementById('enemy-sprite');
-    enemySpriteEl.innerHTML = '';
-    if (enemySprite) {
-      enemySpriteEl.appendChild(enemySprite);
-    }
+    const sprite = this.spriteRenderer.getEnemySprite(e.id, 6);
+    const spriteEl = document.getElementById('enemy-sprite');
+    spriteEl.innerHTML = '';
+    if (sprite) spriteEl.appendChild(sprite);
     
     // Hero
-    document.getElementById('hero-hp-text').textContent = `${hero.hp}/${hero.maxHp}`;
-    document.getElementById('hero-mp-text').textContent = `${hero.mp}/${hero.maxMp}`;
+    document.getElementById('hero-hp-text').textContent = `${h.hp}/${h.maxHp}`;
+    document.getElementById('hero-mp-text').textContent = `${this.hero.mp}/${this.hero.maxMp}`;
     
-    const heroHpFill = document.querySelector('.hero-hp .hp-fill');
-    const heroHpPercent = (hero.hp / hero.maxHp) * 100;
-    heroHpFill.style.width = `${heroHpPercent}%`;
-    heroHpFill.className = 'hp-fill' + (heroHpPercent < 25 ? ' low' : heroHpPercent < 50 ? ' mid' : '');
+    const hHpPct = (h.hp / h.maxHp) * 100;
+    const hHpFill = document.querySelector('.hero-hp .hp-fill');
+    hHpFill.style.width = `${hHpPct}%`;
+    hHpFill.className = 'hp-fill' + (hHpPct < 25 ? ' low' : hHpPct < 50 ? ' mid' : '');
     
-    const heroMpFill = document.querySelector('.mp-fill');
-    heroMpFill.style.width = `${(hero.mp / hero.maxMp) * 100}%`;
+    document.querySelector('.mp-fill').style.width = `${(this.hero.mp / this.hero.maxMp) * 100}%`;
   }
   
-  showBattleMessage(text) {
+  battleMsg(text) {
     document.getElementById('battle-message').textContent = text;
   }
   
-  enableBattleCommands(enabled) {
-    document.querySelectorAll('.battle-cmd').forEach(btn => {
-      btn.disabled = !enabled;
-    });
+  enableBattleCmd(on) {
+    document.querySelectorAll('.battle-cmd').forEach(b => b.disabled = !on);
   }
   
-  handleBattleCommand(cmd) {
-    if (this.state.screen !== 'battle') return;
-    if (this.state.battleState?.turn !== 'player') return;
+  battleCommand(cmd) {
+    if (this.screen !== 'battle' || this.battle?.turn !== 'player') return;
     
     this.audio.select();
-    this.enableBattleCommands(false);
+    this.enableBattleCmd(false);
     
     switch (cmd) {
-      case 'attack':
-        this.playerAttack();
-        break;
-      case 'skill':
-        this.playerSkill();
-        break;
-      case 'item':
-        this.playerItem();
-        break;
-      case 'defend':
-        this.playerDefend();
-        break;
+      case 'attack': this.heroAttack(); break;
+      case 'skill': this.heroSkill(); break;
+      case 'item': this.heroItem(); break;
+      case 'defend': this.heroDefend(); break;
     }
   }
   
-  playerAttack() {
-    const hero = this.getTotalStats('hero');
-    const enemy = this.state.battleState.enemies[0];
+  heroAttack() {
+    const h = this.getHeroStats();
+    const e = this.battle.enemy;
     
-    const baseDamage = Math.max(1, hero.atk - enemy.stats.def / 2);
-    const variance = Math.random() * 0.3 + 0.85;
-    const damage = Math.floor(baseDamage * variance);
-    
-    enemy.hp = Math.max(0, enemy.hp - damage);
+    const dmg = Math.max(1, Math.floor((h.atk - e.stats.def / 2) * (0.85 + Math.random() * 0.3)));
+    e.hp = Math.max(0, e.hp - dmg);
     
     this.audio.attack();
-    this.showBattleEffect('slash');
-    this.showBattleMessage(`勇者の攻撃！\n${damage}のダメージ！`);
+    this.battleEffect('slash');
+    this.battleMsg(`勇者の攻撃！\n${dmg}のダメージ！`);
     this.updateBattleUI();
     
     setTimeout(() => this.checkBattleEnd(), 1200);
   }
   
-  playerSkill() {
-    const hero = this.getPartyMember('hero');
+  heroSkill() {
     const skill = GAME_DATA.skills.brave_strike;
-    
-    if (hero.mp < skill.cost.mp) {
-      this.showBattleMessage('MPが足りない！');
-      this.enableBattleCommands(true);
+    if (this.hero.mp < skill.cost.mp) {
+      this.battleMsg('MPが足りない！');
+      this.enableBattleCmd(true);
       return;
     }
     
-    hero.mp -= skill.cost.mp;
+    this.hero.mp -= skill.cost.mp;
     
-    const heroStats = this.getTotalStats('hero');
-    const enemy = this.state.battleState.enemies[0];
-    const baseDamage = Math.max(1, heroStats.atk * skill.power - enemy.stats.def / 2);
-    const damage = Math.floor(baseDamage * (Math.random() * 0.2 + 0.9));
-    
-    enemy.hp = Math.max(0, enemy.hp - damage);
+    const h = this.getHeroStats();
+    const e = this.battle.enemy;
+    const dmg = Math.max(1, Math.floor((h.atk * skill.power - e.stats.def / 2) * (0.9 + Math.random() * 0.2)));
+    e.hp = Math.max(0, e.hp - dmg);
     
     this.audio.critical();
-    this.showBattleEffect('slash');
-    this.showBattleMessage(`勇者の剣！\n${damage}のダメージ！`);
+    this.battleEffect('slash');
+    this.battleMsg(`勇者の剣！\n${dmg}のダメージ！`);
     this.updateBattleUI();
     
     setTimeout(() => this.checkBattleEnd(), 1200);
   }
   
-  playerItem() {
-    const potion = this.state.inventory.find(i => 
-      i.itemId === 'potion' || i.itemId === 'hi_potion'
-    );
-    
+  heroItem() {
+    const potion = this.inventory.find(i => i.itemId === 'potion' || i.itemId === 'hi_potion');
     if (!potion) {
-      this.showBattleMessage('使えるアイテムがない！');
-      this.enableBattleCommands(true);
+      this.battleMsg('使えるアイテムがない！');
+      this.enableBattleCmd(true);
       return;
     }
     
     const item = GAME_DATA.items[potion.itemId];
     this.removeItem(potion.itemId, 1);
     
-    const hero = this.getPartyMember('hero');
-    const healAmount = item.use.effects[0].value;
-    const heal = Math.min(healAmount, hero.maxHp - hero.hp);
-    hero.hp += heal;
+    const heal = Math.min(item.use.effects[0].value, this.hero.maxHp - this.hero.hp);
+    this.hero.hp += heal;
     
     this.audio.heal();
-    this.showBattleMessage(`${item.name}を使った！\nHPが${heal}回復した！`);
+    this.battleMsg(`${item.name}を使った！\nHPが${heal}回復！`);
     this.updateBattleUI();
     
     setTimeout(() => this.enemyTurn(), 1200);
   }
   
-  playerDefend() {
-    this.state.battleState.defending['hero'] = true;
-    this.showBattleMessage('勇者は身を守っている！');
+  heroDefend() {
+    this.battle.defending = true;
+    this.battleMsg('勇者は身を守っている！');
     setTimeout(() => this.enemyTurn(), 1000);
   }
   
   enemyTurn() {
-    const bs = this.state.battleState;
-    if (!bs || bs.enemies[0].hp <= 0) return;
+    if (!this.battle || this.battle.enemy.hp <= 0) return;
     
-    bs.turn = 'enemy';
+    this.battle.turn = 'enemy';
     
-    const enemy = bs.enemies[0];
-    const ai = enemy.ai?.pattern || ['attack'];
+    const e = this.battle.enemy;
+    const h = this.getHeroStats();
+    const ai = e.ai?.pattern || ['attack'];
     const action = ai[Math.floor(Math.random() * ai.length)];
     
-    const hero = this.getPartyMember('hero');
-    const heroStats = this.getTotalStats('hero');
+    const defMod = this.battle.defending ? 2 : 1;
+    let dmg = 0;
+    let msg = '';
     
-    let damage = 0;
-    let message = '';
-    
-    const defending = bs.defending['hero'];
-    const defMod = defending ? 2 : 1;
-    
-    switch (action) {
-      case 'attack':
-        damage = Math.max(1, Math.floor((enemy.stats.atk - heroStats.def / defMod) * (Math.random() * 0.3 + 0.85)));
-        hero.hp = Math.max(0, hero.hp - damage);
-        message = `${enemy.name}の攻撃！\n${damage}のダメージ！`;
-        this.audio.damage();
-        this.showBattleEffect('damage');
-        break;
-        
-      case 'powerAttack':
-        damage = Math.max(1, Math.floor((enemy.stats.atk * 1.5 - heroStats.def / defMod) * (Math.random() * 0.3 + 0.85)));
-        hero.hp = Math.max(0, hero.hp - damage);
-        message = `${enemy.name}の強攻撃！\n${damage}のダメージ！`;
-        this.audio.critical();
-        this.showBattleEffect('damage');
-        break;
-        
-      case 'defend':
-        message = `${enemy.name}は身構えている…`;
-        break;
-        
-      default:
-        damage = Math.max(1, Math.floor((enemy.stats.atk - heroStats.def / defMod) * (Math.random() * 0.3 + 0.85)));
-        hero.hp = Math.max(0, hero.hp - damage);
-        message = `${enemy.name}の攻撃！\n${damage}のダメージ！`;
-        this.audio.damage();
-        this.showBattleEffect('damage');
+    if (action === 'powerAttack') {
+      dmg = Math.max(1, Math.floor((e.stats.atk * 1.5 - h.def / defMod) * (0.85 + Math.random() * 0.3)));
+      msg = `${e.name}の強攻撃！\n${dmg}のダメージ！`;
+      this.audio.critical();
+    } else if (action === 'defend') {
+      msg = `${e.name}は身構えている…`;
+    } else {
+      dmg = Math.max(1, Math.floor((e.stats.atk - h.def / defMod) * (0.85 + Math.random() * 0.3)));
+      msg = `${e.name}の攻撃！\n${dmg}のダメージ！`;
+      this.audio.damage();
     }
     
-    bs.defending = {};
-    this.showBattleMessage(message);
+    if (dmg > 0) {
+      this.hero.hp = Math.max(0, this.hero.hp - dmg);
+      this.battleEffect('damage');
+    }
+    
+    this.battle.defending = false;
+    this.battleMsg(msg);
     this.updateBattleUI();
     
     setTimeout(() => {
-      if (hero.hp <= 0) {
-        this.battleDefeat();
+      if (this.hero.hp <= 0) {
+        this.battleLose();
       } else {
-        bs.turn = 'player';
-        this.enableBattleCommands(true);
-        this.showBattleMessage('どうする？');
+        this.battle.turn = 'player';
+        this.enableBattleCmd(true);
+        this.battleMsg('どうする？');
       }
     }, 1500);
   }
   
-  showBattleEffect(type) {
-    const effectEl = document.getElementById('battle-effect');
-    effectEl.className = `battle-effect ${type}`;
-    setTimeout(() => {
-      effectEl.className = 'battle-effect';
-    }, 200);
+  battleEffect(type) {
+    const el = document.getElementById('battle-effect');
+    el.className = `battle-effect ${type}`;
+    setTimeout(() => el.className = 'battle-effect', 250);
   }
   
   checkBattleEnd() {
-    const bs = this.state.battleState;
-    const enemy = bs.enemies[0];
-    
-    if (enemy.hp <= 0) {
-      this.battleVictory();
+    if (this.battle.enemy.hp <= 0) {
+      this.battleWin();
     } else {
       setTimeout(() => this.enemyTurn(), 500);
     }
   }
   
-  battleVictory() {
-    const bs = this.state.battleState;
-    const enemy = bs.enemies[0];
-    const enemyData = GAME_DATA.enemies[enemy.id];
-    
+  battleWin() {
     this.audio.victory();
     
-    if (bs.monsterKey) {
-      this.defeatedMonsters.add(bs.monsterKey);
+    const e = this.battle.enemy;
+    
+    // Remove monster
+    if (this.battle.monsterKey) {
+      this.killedMonsters.add(this.battle.monsterKey);
+      delete this.monsters[this.battle.monsterKey];
     }
     
-    const expGain = enemyData.exp || 10;
-    const goldGain = enemyData.gold || 5;
-    
-    this.state.gold += goldGain;
-    this.giveExp('hero', expGain);
+    // Rewards
+    const exp = e.exp || 10;
+    const gold = e.gold || 5;
+    this.gold += gold;
+    this.giveExp(exp);
     
     // Drops
-    let dropMessage = '';
-    if (enemyData.drops) {
-      for (const drop of enemyData.drops) {
-        if (Math.random() < drop.chance) {
-          this.giveItem(drop.itemId, drop.qty);
-          const itemData = GAME_DATA.items[drop.itemId];
-          dropMessage = `\n${itemData?.name}を手に入れた！`;
+    let dropMsg = '';
+    if (e.drops) {
+      for (const d of e.drops) {
+        if (Math.random() < d.chance) {
+          this.giveItem(d.itemId, d.qty);
+          dropMsg = `\n${GAME_DATA.items[d.itemId]?.name}をゲット！`;
         }
       }
     }
     
-    this.showBattleMessage(`${enemy.name}を倒した！\n${expGain}EXP ${goldGain}G獲得！${dropMessage}`);
+    this.battleMsg(`${e.name}を倒した！\n${exp}EXP ${gold}G獲得！${dropMsg}`);
     
     setTimeout(() => {
-      if (this.state.pendingBattleVictory) {
-        this.state.eventSteps = [...this.state.pendingBattleVictory];
-        this.state.pendingBattleVictory = null;
-        this.state.pendingBattleDefeat = null;
+      if (this.battleEvents?.victory) {
+        this.eventQueue = [...this.battleEvents.victory];
+        this.battleEvents = null;
         this.endBattle();
-        this.processNextEventStep();
+        this.nextEvent();
       } else {
         this.endBattle();
       }
     }, 2500);
   }
   
-  battleDefeat() {
+  battleLose() {
     this.audio.defeat();
-    this.showBattleMessage('勇者は倒れた…');
+    this.battleMsg('勇者は倒れた…');
     
     setTimeout(() => {
-      if (this.state.pendingBattleDefeat) {
-        this.state.eventSteps = [...this.state.pendingBattleDefeat];
-        this.state.pendingBattleVictory = null;
-        this.state.pendingBattleDefeat = null;
+      if (this.battleEvents?.defeat) {
+        this.eventQueue = [...this.battleEvents.defeat];
+        this.battleEvents = null;
         this.endBattle();
-        this.processNextEventStep();
+        this.nextEvent();
       } else {
         this.showGameOver();
       }
@@ -824,126 +687,91 @@ class Game {
   }
   
   endBattle() {
-    this.state.battleState = null;
-    this.state.screen = 'map';
+    this.battle = null;
+    this.screen = 'map';
     this.showScreen('map-screen');
-    this.enableBattleCommands(true);
+    this.enableBattleCmd(true);
   }
   
   // === STATS ===
   
-  getPartyMember(actorId) {
-    return this.state.partyStats[actorId];
-  }
-  
-  getTotalStats(actorId) {
-    const member = this.getPartyMember(actorId);
-    if (!member) return null;
+  getHeroStats() {
+    const s = { ...this.hero };
     
-    const stats = { ...member };
-    
+    // Equipment bonuses
     for (const slot of ['weapon', 'armor']) {
-      const equipId = member.equipment[slot];
-      const equip = GAME_DATA.equipment[equipId];
-      if (equip?.mods) {
-        for (const [stat, value] of Object.entries(equip.mods)) {
-          stats[stat] = (stats[stat] || 0) + value;
+      const eq = GAME_DATA.equipment[this.hero.equipment[slot]];
+      if (eq?.mods) {
+        for (const [k, v] of Object.entries(eq.mods)) {
+          s[k] = (s[k] || 0) + v;
         }
       }
     }
-    
-    return stats;
+    return s;
   }
   
-  giveExp(memberId, amount) {
-    const member = this.getPartyMember(memberId);
-    if (!member) return;
+  giveExp(amt) {
+    this.hero.exp += amt;
     
-    member.exp += amount;
-    
-    const expTable = GAME_DATA.constants.expTable;
-    const maxLevel = GAME_DATA.constants.maxLevel;
-    
-    while (member.level < maxLevel && member.exp >= expTable[member.level]) {
-      this.levelUp(memberId);
+    const table = GAME_DATA.constants.expTable;
+    while (this.hero.level < GAME_DATA.constants.maxLevel && this.hero.exp >= table[this.hero.level]) {
+      this.levelUp();
     }
   }
   
-  levelUp(memberId) {
-    const member = this.getPartyMember(memberId);
-    const actor = GAME_DATA.actors[memberId];
-    if (!member || !actor) return;
-    
-    member.level++;
-    
-    const growths = actor.growths;
-    member.maxHp += growths.hp;
-    member.hp = member.maxHp;
-    member.maxMp += growths.mp;
-    member.mp = member.maxMp;
-    member.atk += growths.atk;
-    member.def += growths.def;
-    member.spd += growths.spd;
+  levelUp() {
+    this.hero.level++;
+    const g = GAME_DATA.actors.hero.growths;
+    this.hero.maxHp += g.hp;
+    this.hero.hp = this.hero.maxHp;
+    this.hero.maxMp += g.mp;
+    this.hero.mp = this.hero.maxMp;
+    this.hero.atk += g.atk;
+    this.hero.def += g.def;
     
     this.audio.levelUp();
-    this.showDialogue('system', `レベルアップ！\n${actor.name}はレベル${member.level}になった！`);
+    this.showDialogue('system', `レベルアップ！\n勇者はLv.${this.hero.level}になった！`);
   }
   
-  // === INVENTORY ===
-  
-  giveItem(itemId, qty = 1) {
-    const existing = this.state.inventory.find(i => i.itemId === itemId);
-    if (existing) {
-      existing.qty += qty;
-    } else {
-      this.state.inventory.push({ itemId, qty });
-    }
+  giveItem(id, qty = 1) {
+    const existing = this.inventory.find(i => i.itemId === id);
+    if (existing) existing.qty += qty;
+    else this.inventory.push({ itemId: id, qty });
   }
   
-  removeItem(itemId, qty = 1) {
-    const existing = this.state.inventory.find(i => i.itemId === itemId);
+  removeItem(id, qty = 1) {
+    const existing = this.inventory.find(i => i.itemId === id);
     if (existing) {
       existing.qty -= qty;
       if (existing.qty <= 0) {
-        const idx = this.state.inventory.indexOf(existing);
-        this.state.inventory.splice(idx, 1);
+        this.inventory.splice(this.inventory.indexOf(existing), 1);
       }
     }
   }
   
   // === MENU ===
   
-  toggleMenu() {
-    if (this.state.screen === 'menu') {
-      this.closeMenu();
-    } else if (this.state.screen === 'map' && !this.state.currentDialogue) {
-      this.openMenu();
-    }
-  }
-  
   openMenu() {
+    if (this.screen !== 'map' || this.dialogue) return;
     this.audio.select();
-    this.state.screen = 'menu';
+    this.screen = 'menu';
     this.showScreen('menu-screen');
     this.updateMenuUI();
   }
   
   closeMenu() {
     this.audio.cancel();
-    this.state.screen = 'map';
+    this.screen = 'map';
     this.showScreen('map-screen');
   }
   
-  selectMenuItem(menu) {
+  menuSelect(menu) {
     this.audio.cursor();
     
-    document.querySelectorAll('.menu-item').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.menu === menu);
+    document.querySelectorAll('.menu-item').forEach(b => {
+      b.classList.toggle('active', b.dataset.menu === menu);
     });
-    
-    document.querySelectorAll('.menu-view').forEach(view => {
-      view.classList.remove('active');
-    });
+    document.querySelectorAll('.menu-view').forEach(v => v.classList.remove('active'));
     
     if (menu === 'close') {
       this.closeMenu();
@@ -951,87 +779,75 @@ class Game {
     }
     
     document.getElementById(`${menu}-view`)?.classList.add('active');
-    this.updateMenuUI();
   }
   
   updateMenuUI() {
-    const hero = this.getTotalStats('hero');
-    const heroBase = this.getPartyMember('hero');
+    const h = this.getHeroStats();
     
-    document.getElementById('stat-level').textContent = hero.level;
-    document.getElementById('stat-hp').textContent = hero.hp;
-    document.getElementById('stat-maxhp').textContent = hero.maxHp;
-    document.getElementById('stat-mp').textContent = hero.mp;
-    document.getElementById('stat-maxmp').textContent = hero.maxMp;
-    document.getElementById('stat-atk').textContent = hero.atk;
-    document.getElementById('stat-def').textContent = hero.def;
-    document.getElementById('stat-spd').textContent = hero.spd;
-    document.getElementById('stat-exp').textContent = heroBase.exp;
-    document.getElementById('stat-gold').textContent = this.state.gold;
+    document.getElementById('stat-level').textContent = this.hero.level;
+    document.getElementById('stat-hp').textContent = this.hero.hp;
+    document.getElementById('stat-maxhp').textContent = this.hero.maxHp;
+    document.getElementById('stat-mp').textContent = this.hero.mp;
+    document.getElementById('stat-maxmp').textContent = this.hero.maxMp;
+    document.getElementById('stat-atk').textContent = h.atk;
+    document.getElementById('stat-def').textContent = h.def;
+    document.getElementById('stat-exp').textContent = this.hero.exp;
+    document.getElementById('stat-gold').textContent = this.gold;
     
     // Items
-    const itemList = document.getElementById('item-list');
-    itemList.innerHTML = '';
-    for (const inv of this.state.inventory) {
-      const item = GAME_DATA.items[inv.itemId];
-      const li = document.createElement('li');
-      li.innerHTML = `<span>${item?.name || inv.itemId}</span><span class="item-qty">x${inv.qty}</span>`;
-      li.addEventListener('click', () => this.useMenuItem(inv.itemId));
-      itemList.appendChild(li);
-    }
-    
-    if (this.state.inventory.length === 0) {
-      itemList.innerHTML = '<li style="color:#666">アイテムなし</li>';
-    }
-    
-    // Equipment
-    const weapon = GAME_DATA.equipment[heroBase.equipment.weapon];
-    const armor = GAME_DATA.equipment[heroBase.equipment.armor];
-    document.getElementById('equip-weapon').textContent = weapon?.name || 'なし';
-    document.getElementById('equip-armor').textContent = armor?.name || 'なし';
-  }
-  
-  useMenuItem(itemId) {
-    const item = GAME_DATA.items[itemId];
-    if (!item || item.type !== 'consumable') return;
-    
-    const hero = this.getPartyMember('hero');
-    
-    for (const effect of item.use.effects) {
-      if (effect.type === 'healHp' && hero.hp < hero.maxHp) {
-        const heal = Math.min(effect.value, hero.maxHp - hero.hp);
-        hero.hp += heal;
-        this.removeItem(itemId, 1);
-        this.audio.heal();
-        this.showDialogue('system', `${item.name}を使った！\nHPが${heal}回復した！`);
-        this.updateMenuUI();
-        return;
+    const list = document.getElementById('item-list');
+    list.innerHTML = '';
+    if (this.inventory.length === 0) {
+      list.innerHTML = '<li style="color:#666">アイテムなし</li>';
+    } else {
+      for (const inv of this.inventory) {
+        const item = GAME_DATA.items[inv.itemId];
+        const li = document.createElement('li');
+        li.innerHTML = `<span>${item?.name || inv.itemId}</span><span class="item-qty">x${inv.qty}</span>`;
+        li.onclick = () => this.useItem(inv.itemId);
+        list.appendChild(li);
       }
     }
     
-    this.audio.cancel();
+    // Equipment
+    document.getElementById('equip-weapon').textContent = 
+      GAME_DATA.equipment[this.hero.equipment.weapon]?.name || 'なし';
+    document.getElementById('equip-armor').textContent = 
+      GAME_DATA.equipment[this.hero.equipment.armor]?.name || 'なし';
+  }
+  
+  useItem(id) {
+    const item = GAME_DATA.items[id];
+    if (!item || item.type !== 'consumable') return;
+    
+    if (item.use.effects[0].type === 'healHp' && this.hero.hp < this.hero.maxHp) {
+      const heal = Math.min(item.use.effects[0].value, this.hero.maxHp - this.hero.hp);
+      this.hero.hp += heal;
+      this.removeItem(id, 1);
+      this.audio.heal();
+      this.closeMenu();
+      this.showDialogue('system', `${item.name}を使った！\nHPが${heal}回復！`);
+    }
   }
   
   // === SCREENS ===
   
-  showScreen(screenId) {
-    document.querySelectorAll('.screen').forEach(screen => {
-      screen.classList.remove('active');
-    });
-    document.getElementById(screenId)?.classList.add('active');
+  showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id)?.classList.add('active');
   }
   
   showGameOver() {
-    this.state.screen = 'gameover';
+    this.screen = 'gameover';
     this.showScreen('gameover-screen');
   }
   
-  showEnding(endingId) {
-    const ending = GAME_DATA.endings[endingId];
+  showEnding(id) {
+    const ending = GAME_DATA.endings[id];
     if (!ending) return;
     
     this.audio.gameClear();
-    this.state.screen = 'ending';
+    this.screen = 'ending';
     document.getElementById('ending-title').textContent = ending.title;
     document.getElementById('ending-text').textContent = ending.text;
     this.showScreen('ending-screen');
@@ -1039,177 +855,132 @@ class Game {
   
   // === GAME LOOP ===
   
-  gameLoop(timestamp) {
-    const deltaTime = timestamp - this.lastTime;
-    this.lastTime = timestamp;
+  loop(time) {
+    const dt = time - this.lastTime;
+    this.lastTime = time;
     
-    this.update(deltaTime);
+    this.update(dt);
     this.render();
     
-    requestAnimationFrame((t) => this.gameLoop(t));
+    requestAnimationFrame(t => this.loop(t));
   }
   
-  update(deltaTime) {
-    if (this.state.screen !== 'map' || this.state.currentDialogue) return;
+  update(dt) {
+    if (this.screen !== 'map' || this.dialogue) return;
     
-    // Update monsters
-    this.monsterMoveTimer += deltaTime;
-    if (this.monsterMoveTimer > 2000) {
-      this.monsterMoveTimer = 0;
-      this.updateMonsters();
-    }
-    
-    if (this.state.isMoving) {
-      this.currentMoveTime += deltaTime;
-      const duration = 1 / this.moveSpeed;
-      let progress = this.currentMoveTime / duration;
+    // Movement
+    if (this.moving) {
+      this.moveProgress += dt;
+      const t = Math.min(1, this.moveProgress / this.moveTime);
+      const ease = 1 - Math.pow(1 - t, 2);
       
-      if (progress >= 1) {
-        this.state.position = { x: this.targetPosition.x, y: this.targetPosition.y };
-        this.state.isMoving = false;
-        this.currentMoveTime = 0;
-        
-        this.checkTouchEvents(this.state.position.x, this.state.position.y);
-      } else {
-        const easedProgress = 1 - Math.pow(1 - progress, 2);
-        this.state.position.x = this.startPosition.x + (this.targetPosition.x - this.startPosition.x) * easedProgress;
-        this.state.position.y = this.startPosition.y + (this.targetPosition.y - this.startPosition.y) * easedProgress;
+      this.pos.x = this.fromPos.x + (this.toPos.x - this.fromPos.x) * ease;
+      this.pos.y = this.fromPos.y + (this.toPos.y - this.fromPos.y) * ease;
+      
+      if (t >= 1) {
+        this.pos = { ...this.toPos };
+        this.moving = false;
+        this.checkTouchEvents(this.pos.x, this.pos.y);
       }
     } else {
-      if (this.input.up) this.move('up');
-      else if (this.input.down) this.move('down');
-      else if (this.input.left) this.move('left');
-      else if (this.input.right) this.move('right');
+      // Input
+      if (this.keys['arrowup'] || this.keys['w']) this.tryMove('up');
+      else if (this.keys['arrowdown'] || this.keys['s']) this.tryMove('down');
+      else if (this.keys['arrowleft'] || this.keys['a']) this.tryMove('left');
+      else if (this.keys['arrowright'] || this.keys['d']) this.tryMove('right');
+    }
+    
+    // Monster movement (slow)
+    if (!this.monsterTimer) this.monsterTimer = 0;
+    this.monsterTimer += dt;
+    if (this.monsterTimer > 2000) {
+      this.monsterTimer = 0;
+      this.moveMonsters();
     }
   }
   
-  updateMonsters() {
-    const map = this.state.currentMap;
-    if (!map?.monsters) return;
+  moveMonsters() {
+    const dirs = [{ x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 }];
     
-    const vectors = [{ x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 }];
-    
-    for (let idx = 0; idx < map.monsters.length; idx++) {
-      const monster = map.monsters[idx];
-      const key = `${map.id}_${idx}`;
-      const pos = this.monsterPositions[key];
+    for (const [key, m] of Object.entries(this.monsters)) {
+      if (m.movePattern === 'none') continue;
+      if (Math.random() > 0.3) continue;
       
-      if (!pos || this.defeatedMonsters.has(key)) continue;
-      if (monster.movePattern === 'none') continue;
+      const d = dirs[Math.floor(Math.random() * dirs.length)];
+      const nx = m.x + d.x;
+      const ny = m.y + d.y;
       
-      if (Math.random() < 0.3) {
-        const dir = vectors[Math.floor(Math.random() * vectors.length)];
-        const newX = pos.x + dir.x;
-        const newY = pos.y + dir.y;
-        
-        if (!this.checkCollision(newX, newY)) {
-          pos.x = newX;
-          pos.y = newY;
-        }
+      if (!this.isBlocked(nx, ny) && !(nx === Math.round(this.pos.x) && ny === Math.round(this.pos.y))) {
+        m.x = nx;
+        m.y = ny;
       }
     }
   }
   
   render() {
-    if (this.state.screen !== 'map') return;
+    if (this.screen !== 'map') return;
     
     const ctx = this.ctx;
-    const map = this.state.currentMap;
-    if (!map) return;
+    if (!this.map) return;
     
     // Clear
-    ctx.fillStyle = '#1a2636';
+    ctx.fillStyle = '#111';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     
     // Camera
-    const camX = this.state.position.x * this.scaledTileSize - this.canvas.width / 2 + this.scaledTileSize / 2;
-    const camY = this.state.position.y * this.scaledTileSize - this.canvas.height / 2 + this.scaledTileSize / 2;
+    const camX = this.pos.x * this.scaledTile - this.canvas.width / 2 + this.scaledTile / 2;
+    const camY = this.pos.y * this.scaledTile - this.canvas.height / 2 + this.scaledTile / 2;
+    const maxCamX = this.map.size.w * this.scaledTile - this.canvas.width;
+    const maxCamY = this.map.size.h * this.scaledTile - this.canvas.height;
+    const cx = Math.max(0, Math.min(maxCamX, camX));
+    const cy = Math.max(0, Math.min(maxCamY, camY));
     
-    const maxCamX = map.size.w * this.scaledTileSize - this.canvas.width;
-    const maxCamY = map.size.h * this.scaledTileSize - this.canvas.height;
-    const clampedCamX = Math.max(0, Math.min(maxCamX, camX));
-    const clampedCamY = Math.max(0, Math.min(maxCamY, camY));
-    
-    // Map background
-    if (this.state.mapBackground) {
-      ctx.drawImage(this.state.mapBackground, -clampedCamX, -clampedCamY);
+    // Background
+    if (this.mapBg) {
+      ctx.drawImage(this.mapBg, -cx, -cy);
     }
     
     // Items
-    if (map.items) {
-      for (const item of map.items) {
-        const flagKey = `item_${map.id}_${item.id}`;
-        if (this.state.flags[flagKey]) continue;
+    if (this.map.items) {
+      for (const item of this.map.items) {
+        const flag = `item_${this.mapId}_${item.id}`;
+        if (this.flags[flag]) continue;
         
-        const sprite = this.spriteRenderer.getTileSprite(item.sprite || 'sparkle', this.displayScale);
-        if (sprite) {
-          ctx.drawImage(sprite,
-            item.pos.x * this.scaledTileSize - clampedCamX,
-            item.pos.y * this.scaledTileSize - clampedCamY
-          );
-        }
+        const spr = this.spriteRenderer.getTileSprite(item.sprite || 'sparkle', this.scale);
+        if (spr) ctx.drawImage(spr, item.pos.x * this.scaledTile - cx, item.pos.y * this.scaledTile - cy);
       }
     }
     
     // NPCs
-    if (map.npcs) {
-      for (const npc of map.npcs) {
-        if (!this.checkCondition(npc.condition)) continue;
+    if (this.map.npcs) {
+      for (const npc of this.map.npcs) {
+        if (!this.checkCond(npc.condition)) continue;
         
         const actor = GAME_DATA.actors[npc.actorId];
-        const spriteKey = actor?.spriteKey || npc.actorId;
-        const sprite = this.spriteRenderer.getCharacterSprite(spriteKey, 'down', this.displayScale);
-        
-        if (sprite) {
-          ctx.drawImage(sprite,
-            npc.pos.x * this.scaledTileSize - clampedCamX,
-            npc.pos.y * this.scaledTileSize - clampedCamY
-          );
-        }
+        const spr = this.spriteRenderer.getCharacterSprite(actor?.spriteKey || npc.actorId, 'down', this.scale);
+        if (spr) ctx.drawImage(spr, npc.pos.x * this.scaledTile - cx, npc.pos.y * this.scaledTile - cy);
       }
     }
     
     // Monsters
-    if (map.monsters) {
-      for (let idx = 0; idx < map.monsters.length; idx++) {
-        const monster = map.monsters[idx];
-        const key = `${map.id}_${idx}`;
-        const pos = this.monsterPositions[key];
-        
-        if (!pos || this.defeatedMonsters.has(key)) continue;
-        if (!this.checkCondition(monster.condition)) continue;
-        
-        const sprite = this.spriteRenderer.getEnemySprite(monster.enemyId, this.displayScale);
-        if (sprite) {
-          ctx.drawImage(sprite,
-            pos.x * this.scaledTileSize - clampedCamX,
-            pos.y * this.scaledTileSize - clampedCamY
-          );
-        }
-      }
+    for (const [key, m] of Object.entries(this.monsters)) {
+      const spr = this.spriteRenderer.getEnemySprite(m.enemyId, this.scale);
+      if (spr) ctx.drawImage(spr, m.x * this.scaledTile - cx, m.y * this.scaledTile - cy);
     }
     
     // Hero
-    const heroSprite = this.spriteRenderer.getCharacterSprite('hero', this.state.direction, this.displayScale);
-    if (heroSprite) {
-      ctx.drawImage(heroSprite,
-        this.state.position.x * this.scaledTileSize - clampedCamX,
-        this.state.position.y * this.scaledTileSize - clampedCamY
-      );
-    }
+    const heroSpr = this.spriteRenderer.getCharacterSprite('hero', this.dir, this.scale);
+    if (heroSpr) ctx.drawImage(heroSpr, this.pos.x * this.scaledTile - cx, this.pos.y * this.scaledTile - cy);
     
     // Exit arrows
-    if (map.exits) {
-      for (const exit of map.exits) {
-        if (exit.condition && !this.checkCondition(exit.condition)) continue;
+    if (this.map.exits) {
+      for (const exit of this.map.exits) {
+        if (exit.condition && !this.checkCond(exit.condition)) continue;
         
-        const sprite = this.spriteRenderer.getTileSprite('exit_arrow', this.displayScale);
-        if (sprite) {
-          ctx.globalAlpha = 0.6 + Math.sin(Date.now() / 300) * 0.2;
-          ctx.drawImage(sprite,
-            exit.at.x * this.scaledTileSize - clampedCamX,
-            exit.at.y * this.scaledTileSize - clampedCamY
-          );
+        const spr = this.spriteRenderer.getTileSprite('exit_arrow', this.scale);
+        if (spr) {
+          ctx.globalAlpha = 0.5 + Math.sin(Date.now() / 300) * 0.3;
+          ctx.drawImage(spr, exit.at.x * this.scaledTile - cx, exit.at.y * this.scaledTile - cy);
           ctx.globalAlpha = 1;
         }
       }
@@ -1219,5 +990,6 @@ class Game {
 
 // Start
 window.addEventListener('DOMContentLoaded', () => {
+  console.log('Starting game...');
   window.game = new Game();
 });
