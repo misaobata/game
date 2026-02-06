@@ -940,14 +940,14 @@ class Game {
     const ctx = this.ctx;
     if (!this.map) return;
     
-    // Clear with map-based color
-    let bgColor = '#111';
+    // Clear with map-based color (bright!)
+    let bgColor = '#2d3436';
     switch (this.map.tileData) {
-      case 'field': bgColor = '#228b22'; break;      // Forest green
-      case 'castle_inside': bgColor = '#654321'; break; // Dark brown
-      case 'castle_outside': bgColor = '#4a4a5a'; break; // Gray
-      case 'tower_inside': bgColor = '#1a1a2e'; break;  // Dark purple
-      case 'town': bgColor = '#696969'; break;        // Dim gray
+      case 'field': bgColor = '#00b894'; break;       // Bright teal green
+      case 'castle_inside': bgColor = '#b97a57'; break; // Warm brown
+      case 'castle_outside': bgColor = '#636e72'; break; // Cool gray
+      case 'tower_inside': bgColor = '#2c2c54'; break;  // Dark purple
+      case 'town': bgColor = '#a0a0c0'; break;        // Light purple-gray
     }
     ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);

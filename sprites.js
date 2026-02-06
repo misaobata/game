@@ -258,22 +258,22 @@ const SPRITES = {
   
   tiles: {
     // ===== 村の地面（石畳）=====
-    stone: ["4444344434443444" +
-            "4555455545554555" +
-            "4555455545554555" +
-            "3444344434443444" +
-            "4445444454444544" +
-            "4555455545554555" +
-            "4555455545554555" +
-            "3444344434443444" +
-            "4444344434443444" +
-            "4555455545554555" +
-            "4555455545554555" +
-            "3444344434443444" +
-            "4445444454444544" +
-            "4555455545554555" +
-            "4555455545554555" +
-            "3444344434443444"],
+    stone: ["5555455554555545" +
+            "5555455554555545" +
+            "5555455554555545" +
+            "4444344443444434" +
+            "5554555545554555" +
+            "5554555545554555" +
+            "5554555545554555" +
+            "4443444434443444" +
+            "5555455554555545" +
+            "5555455554555545" +
+            "5555455554555545" +
+            "4444344443444434" +
+            "5554555545554555" +
+            "5554555545554555" +
+            "5554555545554555" +
+            "4443444434443444"],
     
     // ===== 村の建物（壁）=====
     wall: ["7777777777777777" +
@@ -294,22 +294,22 @@ const SPRITES = {
            "7777777777777777"],
     
     // ===== 草原 =====
-    grass: ["8888988898888888" +
-            "8988898888889888" +
-            "8888888898888988" +
-            "8988988888988888" +
-            "8898888888888898" +
-            "8888888988888888" +
-            "8888988888988888" +
-            "8888888888888988" +
-            "8988988888888888" +
-            "8888888888898888" +
-            "8898888988888888" +
-            "8888888888888898" +
-            "8888888988888888" +
-            "8988888888988888" +
-            "8888988888898898" +
-            "8888898888888888"],
+    grass: ["8888888888888888" +
+            "8898889888988898" +
+            "8888888888888888" +
+            "8988898889888988" +
+            "8888888888888888" +
+            "8898888888889888" +
+            "8888888888888888" +
+            "8888988889888888" +
+            "8888888888888888" +
+            "8988889888888898" +
+            "8888888888888888" +
+            "8898888888988888" +
+            "8888888888888888" +
+            "8888898889888988" +
+            "8888888888888888" +
+            "8988888888888898"],
     
     // ===== 木 =====
     tree: ["0000888888880000" +
@@ -746,21 +746,21 @@ class SpriteRenderer {
     
     const colors = {
       "0": "transparent",
-      "1": "#1a1a2e",      // Dark purple-black
-      "2": "#3d3d5c",      // Dark gray-purple  
-      "3": "#5a5a7a",      // Medium gray
-      "4": "#8a8aa0",      // Light gray
-      "5": "#ffe4c4",      // Skin/cream color
-      "6": "#ff4444",      // Red (lips, damage)
-      "7": "#a0522d",      // Brown (wood, buildings) - Sienna
-      "8": "#32cd32",      // Lime green (grass)
-      "9": "#228b22",      // Forest green
-      "A": "#00bfff",      // Deep sky blue (water)
-      "B": "#4169e1",      // Royal blue
-      "C": "#ffd700",      // Gold/yellow
-      "D": "#ff6600",      // Orange
-      "E": "#ff69b4",      // Hot pink
-      "F": "#9932cc"       // Dark orchid purple
+      "1": "#2c2c54",      // Dark purple
+      "2": "#474787",      // Medium purple  
+      "3": "#6c6c9c",      // Light purple-gray
+      "4": "#a0a0c0",      // Pale purple-gray
+      "5": "#ffeaa7",      // Cream/light yellow
+      "6": "#ff6b6b",      // Coral red
+      "7": "#cd853f",      // Peru brown (wood)
+      "8": "#55efc4",      // Mint green (grass) - BRIGHT!
+      "9": "#00b894",      // Teal green
+      "A": "#74b9ff",      // Light blue (water)
+      "B": "#0984e3",      // Strong blue
+      "C": "#fdcb6e",      // Mustard yellow/gold
+      "D": "#e17055",      // Orange-red
+      "E": "#fd79a8",      // Pink
+      "F": "#a29bfe"       // Light purple
     };
     
     for (let y = 0; y < size; y++) {
@@ -809,8 +809,8 @@ class SpriteRenderer {
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
     
-    // Fill with base color first
-    ctx.fillStyle = '#2d4a2d';
+    // Fill with base color first (BRIGHT!)
+    ctx.fillStyle = '#55efc4';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     // Map type → tiles
@@ -823,25 +823,25 @@ class SpriteRenderer {
         floorTile = 'grass';
         floorAlt = 'flower';
         wallTile = 'tree';
-        ctx.fillStyle = '#3cb371'; // Green base
+        ctx.fillStyle = '#55efc4'; // Bright mint green
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         break;
       case 'castle_inside':
         floorTile = 'floor';
         wallTile = 'castle_wall';
-        ctx.fillStyle = '#5a4a3a'; // Brown base
+        ctx.fillStyle = '#dfe6e9'; // Light gray
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         break;
       case 'castle_outside':
         floorTile = 'castle_ground';
         wallTile = 'castle_wall';
-        ctx.fillStyle = '#4a4a5a'; // Gray base
+        ctx.fillStyle = '#b2bec3'; // Gray
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         break;
       case 'tower_inside':
         floorTile = 'tower_floor';
         wallTile = 'tower_wall';
-        ctx.fillStyle = '#1a1a2e'; // Dark base
+        ctx.fillStyle = '#2c2c54'; // Dark purple
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         break;
       case 'town':
@@ -849,7 +849,7 @@ class SpriteRenderer {
         floorTile = 'stone';
         floorAlt = 'path';
         wallTile = 'house';
-        ctx.fillStyle = '#6a6a7a'; // Gray stone base
+        ctx.fillStyle = '#dfe6e9'; // Light gray for castle interior
         ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
     
