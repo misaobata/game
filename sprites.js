@@ -873,11 +873,42 @@ class SpriteRenderer {
       }
     }
     
+    // Draw castle gate for castle_outside maps
+    if (map.tileData === 'castle_outside') {
+      // Draw large gate at top center
+      const gateX = Math.floor(map.size.w / 2) - 2;
+      const sprites = [
+        { sprite: 'gate_top', x: gateX, y: 0 },
+        { sprite: 'gate_top', x: gateX + 1, y: 0 },
+        { sprite: 'gate_top', x: gateX + 2, y: 0 },
+        { sprite: 'gate_top', x: gateX + 3, y: 0 },
+        { sprite: 'tower_pillar', x: gateX - 1, y: 0 },
+        { sprite: 'tower_pillar', x: gateX + 4, y: 0 },
+        { sprite: 'tower_pillar', x: gateX - 1, y: 1 },
+        { sprite: 'tower_pillar', x: gateX + 4, y: 1 },
+        { sprite: 'gate_left', x: gateX, y: 1 },
+        { sprite: 'gate_center', x: gateX + 1, y: 1 },
+        { sprite: 'gate_center', x: gateX + 2, y: 1 },
+        { sprite: 'gate_right', x: gateX + 3, y: 1 },
+      ];
+      for (const g of sprites) {
+        const spr = this.getTileSprite(g.sprite, scale);
+        if (spr) {
+          ctx.drawImage(spr, g.x * size * scale, g.y * size * scale);
+        }
+      }
+    }
+    
     // Draw special decorations
     if (map.decorations) {
+      console.log('Drawing decorations:', map.decorations.length);
       for (const d of map.decorations) {
         const spr = this.getTileSprite(d.sprite, scale);
-        if (spr) ctx.drawImage(spr, d.x * size * scale, d.y * size * scale);
+        if (spr) {
+          ctx.drawImage(spr, d.x * size * scale, d.y * size * scale);
+        } else {
+          console.warn('Decoration sprite not found:', d.sprite);
+        }
       }
     }
     
