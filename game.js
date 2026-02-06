@@ -278,13 +278,26 @@ class Game {
     if (this.moving) return;
     
     const vec = GAME_DATA.constants.directionVectors[this.dir];
-    const tx = Math.round(this.pos.x) + vec.x;
-    const ty = Math.round(this.pos.y) + vec.y;
+    const px = Math.round(this.pos.x);
+    const py = Math.round(this.pos.y);
+    const tx = px + vec.x;
+    const ty = py + vec.y;
     
-    // Check events
+    // Check events at facing position AND current position
     if (this.map?.events) {
+      // First check facing position
       for (const ev of this.map.events) {
         if (ev.trigger === 'action' && ev.at.x === tx && ev.at.y === ty) {
+          if (this.checkCond(ev.condition)) {
+            this.audio.select();
+            this.runEvent(ev.steps);
+            return;
+          }
+        }
+      }
+      // Then check current position (for standing on interactive tiles)
+      for (const ev of this.map.events) {
+        if (ev.trigger === 'action' && ev.at.x === px && ev.at.y === py) {
           if (this.checkCond(ev.condition)) {
             this.audio.select();
             this.runEvent(ev.steps);
