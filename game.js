@@ -603,7 +603,7 @@ class Game {
   
   showDialogue(speaker, text, callback) {
     const speakerName = speaker === 'system' ? '' : 
-      (GAME_DATA.actors[speaker]?.name || speaker);
+      (GAME_DATA.actors[speaker]?.name || GAME_DATA.enemies[speaker]?.name || speaker);
     
     this.state.currentDialogue = { speaker: speakerName, text, callback };
     
