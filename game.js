@@ -1,6 +1,6 @@
 // ============================================
 // Game Engine - Pixel Hero: Rescue the Princess
-// Dragon Quest Style Movement
+// Enhanced with Visible Monsters & Items
 // ============================================
 
 class Game {
@@ -13,22 +13,25 @@ class Game {
     this.spriteRenderer = new SpriteRenderer();
     
     // Movement settings (Dragon Quest style)
-    this.moveSpeed = 0.08; // How fast to move between tiles (lower = slower)
-    this.moveCooldown = 80; // ms between moves when holding direction
+    this.moveSpeed = 0.08;
+    this.moveCooldown = 80;
+    
+    // Monster movement timer
+    this.monsterMoveTimer = 0;
+    this.monsterMoveInterval = 800; // ms between monster moves
     
     // Game state
     this.state = {
-      screen: 'map', // 'map', 'battle', 'menu', 'dialogue', 'gameover', 'ending'
+      screen: 'map',
       flags: { ...GAME_DATA.flags },
       hero: this.initHero(),
       currentMapId: null,
       currentMap: null,
       mapBackground: null,
-      // Position tracking for smooth movement
-      position: { x: 0, y: 0 },           // Current tile position
-      renderPosition: { x: 0, y: 0 },     // Interpolated render position
-      targetPosition: { x: 0, y: 0 },     // Target tile position
-      moveProgress: 0,                     // 0-1 progress of current move
+      position: { x: 0, y: 0 },
+      renderPosition: { x: 0, y: 0 },
+      targetPosition: { x: 0, y: 0 },
+      moveProgress: 0,
       direction: 'down',
       isMoving: false,
       walkFrame: 0,
@@ -37,7 +40,13 @@ class Game {
       dialogueQueue: [],
       battleState: null,
       pendingEventSteps: [],
-      currentEventIndex: 0
+      currentEventIndex: 0,
+      // Visible monsters on current map
+      monsters: [],
+      // Collected items
+      collectedItems: new Set(),
+      // Animation frame for items
+      sparkleFrame: 0
     };
     
     this.input = {
@@ -62,27 +71,18 @@ class Game {
   }
   
   init() {
-    // Setup input
     this.setupInput();
-    
-    // Load starting map
     const starting = GAME_DATA.meta.starting;
     this.loadMap(starting.mapId, starting.spawn);
-    
-    // Setup UI
     this.setupUI();
-    
-    // Start game loop
     this.lastTime = 0;
     requestAnimationFrame((t) => this.gameLoop(t));
   }
   
   setupInput() {
-    // Keyboard
     document.addEventListener('keydown', (e) => this.handleKeyDown(e));
     document.addEventListener('keyup', (e) => this.handleKeyUp(e));
     
-    // D-pad buttons
     document.querySelectorAll('.dpad-btn').forEach(btn => {
       btn.addEventListener('mousedown', () => {
         this.input[btn.dataset.dir] = true;
@@ -102,7 +102,6 @@ class Game {
       });
     });
     
-    // Action button
     const actionBtn = document.getElementById('btn-action');
     actionBtn.addEventListener('click', () => this.handleAction());
     actionBtn.addEventListener('touchstart', (e) => {
@@ -110,7 +109,6 @@ class Game {
       this.handleAction();
     });
     
-    // Menu button
     const menuBtn = document.getElementById('btn-menu');
     menuBtn.addEventListener('click', () => this.toggleMenu());
   }
@@ -160,6 +158,8 @@ class Game {
     if (this.state.screen === 'dialogue') {
       this.advanceDialogue();
     } else if (this.state.screen === 'map' && !this.state.isMoving) {
+      // Check for item pickup at current position
+      if (this.checkItemPickup()) return;
       this.checkActionEvents();
     }
   }
@@ -173,7 +173,6 @@ class Game {
   }
   
   setupUI() {
-    // Menu items
     document.querySelectorAll('.menu-item').forEach(item => {
       item.addEventListener('click', () => {
         const menu = item.dataset.menu;
@@ -185,7 +184,6 @@ class Game {
       });
     });
     
-    // Battle commands
     document.querySelectorAll('.battle-cmd').forEach(btn => {
       btn.addEventListener('click', () => {
         if (this.state.screen === 'battle' && this.state.battleState?.phase === 'command') {
@@ -194,12 +192,10 @@ class Game {
       });
     });
     
-    // Retry button
     document.getElementById('btn-retry').addEventListener('click', () => {
       location.reload();
     });
     
-    // Title button
     document.getElementById('btn-title').addEventListener('click', () => {
       location.reload();
     });
@@ -223,34 +219,58 @@ class Game {
     this.state.isMoving = false;
     this.state.moveProgress = 0;
     
+    // Initialize visible monsters
+    this.initMapMonsters(mapData);
+    
     // Generate map background
     this.state.mapBackground = this.spriteRenderer.generateMapBackground(mapData, this.tileSize);
     
-    // Update UI
     document.getElementById('map-name').textContent = mapData.name;
-    
-    // Check auto events
     this.checkAutoEvents();
   }
   
-  checkCollision(x, y) {
+  initMapMonsters(mapData) {
+    this.state.monsters = [];
+    if (!mapData.monsters) return;
+    
+    for (const monsterDef of mapData.monsters) {
+      this.state.monsters.push({
+        ...monsterDef,
+        currentPos: { ...monsterDef.pos },
+        renderPos: { x: monsterDef.pos.x, y: monsterDef.pos.y },
+        targetPos: { ...monsterDef.pos },
+        isMoving: false,
+        moveProgress: 0,
+        direction: 'down',
+        defeated: false
+      });
+    }
+  }
+  
+  checkCollision(x, y, ignoreMonsters = false) {
     const map = this.state.currentMap;
     if (!map) return true;
     
-    // Bounds check
     if (x < 0 || y < 0 || x >= map.size.w || y >= map.size.h) {
       return true;
     }
     
-    // Collision layer
     if (map.collision[y]?.[x] === 1) {
       return true;
     }
     
-    // NPC collision
-    for (const npc of map.npcs) {
+    for (const npc of (map.npcs || [])) {
       if (this.checkNpcCondition(npc) && npc.pos.x === x && npc.pos.y === y) {
         return true;
+      }
+    }
+    
+    // Check monster collision
+    if (!ignoreMonsters) {
+      for (const monster of this.state.monsters) {
+        if (!monster.defeated && monster.currentPos.x === x && monster.currentPos.y === y) {
+          return true;
+        }
       }
     }
     
@@ -262,7 +282,6 @@ class Game {
     return this.state.flags[npc.condition.flag] === npc.condition.equals;
   }
   
-  // Start movement to adjacent tile
   startMove(direction) {
     if (this.state.isMoving || this.state.screen !== 'map') return;
     
@@ -284,8 +303,14 @@ class Game {
       return;
     }
     
+    // Check monster collision for battle
+    const monster = this.checkMonsterCollision(newX, newY);
+    if (monster) {
+      this.startBattleWithMonster(monster);
+      return;
+    }
+    
     if (!this.checkCollision(newX, newY)) {
-      // Start smooth movement
       this.state.targetPosition = { x: newX, y: newY };
       this.state.isMoving = true;
       this.state.moveProgress = 0;
@@ -293,32 +318,26 @@ class Game {
     }
   }
   
-  // Update movement animation
   updateMovement(deltaTime) {
     if (!this.state.isMoving) return;
     
-    // Progress the movement
     this.state.moveProgress += this.moveSpeed;
     
-    // Update walking animation frame
     this.state.walkFrameTimer += deltaTime;
     if (this.state.walkFrameTimer > 150) {
       this.state.walkFrame = (this.state.walkFrame + 1) % 2;
       this.state.walkFrameTimer = 0;
     }
     
-    // Interpolate render position
     const startX = this.state.position.x;
     const startY = this.state.position.y;
     const endX = this.state.targetPosition.x;
     const endY = this.state.targetPosition.y;
     
-    // Smooth easing
     const t = this.easeInOut(Math.min(1, this.state.moveProgress));
     this.state.renderPosition.x = startX + (endX - startX) * t;
     this.state.renderPosition.y = startY + (endY - startY) * t;
     
-    // Complete movement
     if (this.state.moveProgress >= 1) {
       this.state.position.x = this.state.targetPosition.x;
       this.state.position.y = this.state.targetPosition.y;
@@ -328,18 +347,175 @@ class Game {
       this.state.moveProgress = 0;
       this.state.walkFrame = 0;
       
-      // Check touch events at new position
+      // Check for auto item pickup
+      this.checkAutoItemPickup();
+      
       this.checkTouchEvents(this.state.position.x, this.state.position.y);
       
-      // Random encounter check
-      this.checkRandomEncounter();
+      // Check if monster moved into us
+      this.checkMonsterTouch();
     }
   }
   
-  // Easing function for smooth movement
   easeInOut(t) {
     return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
   }
+  
+  // ============ Monster System ============
+  
+  checkMonsterCollision(x, y) {
+    for (const monster of this.state.monsters) {
+      if (!monster.defeated && monster.currentPos.x === x && monster.currentPos.y === y) {
+        return monster;
+      }
+    }
+    return null;
+  }
+  
+  checkMonsterTouch() {
+    const px = this.state.position.x;
+    const py = this.state.position.y;
+    
+    for (const monster of this.state.monsters) {
+      if (!monster.defeated && monster.currentPos.x === px && monster.currentPos.y === py) {
+        this.startBattleWithMonster(monster);
+        return;
+      }
+    }
+  }
+  
+  updateMonsters(deltaTime) {
+    this.monsterMoveTimer += deltaTime;
+    
+    if (this.monsterMoveTimer >= this.monsterMoveInterval) {
+      this.monsterMoveTimer = 0;
+      
+      for (const monster of this.state.monsters) {
+        if (monster.defeated || monster.isMoving) continue;
+        
+        this.moveMonster(monster);
+      }
+    }
+    
+    // Update monster movement animation
+    for (const monster of this.state.monsters) {
+      if (!monster.isMoving) continue;
+      
+      monster.moveProgress += this.moveSpeed * 0.7;
+      
+      const t = this.easeInOut(Math.min(1, monster.moveProgress));
+      monster.renderPos.x = monster.currentPos.x + (monster.targetPos.x - monster.currentPos.x) * t;
+      monster.renderPos.y = monster.currentPos.y + (monster.targetPos.y - monster.currentPos.y) * t;
+      
+      if (monster.moveProgress >= 1) {
+        monster.currentPos.x = monster.targetPos.x;
+        monster.currentPos.y = monster.targetPos.y;
+        monster.renderPos.x = monster.currentPos.x;
+        monster.renderPos.y = monster.currentPos.y;
+        monster.isMoving = false;
+        monster.moveProgress = 0;
+        
+        // Check if monster touched player
+        if (monster.currentPos.x === this.state.position.x && 
+            monster.currentPos.y === this.state.position.y) {
+          this.startBattleWithMonster(monster);
+        }
+      }
+    }
+  }
+  
+  moveMonster(monster) {
+    const directions = ['up', 'down', 'left', 'right'];
+    const vectors = GAME_DATA.constants.directionVectors;
+    
+    // Shuffle directions for random movement
+    const shuffled = directions.sort(() => Math.random() - 0.5);
+    
+    for (const dir of shuffled) {
+      const vec = vectors[dir];
+      const newX = monster.currentPos.x + vec.x;
+      const newY = monster.currentPos.y + vec.y;
+      
+      // Check if position is valid (not colliding with walls, NPCs, or other monsters)
+      if (!this.checkCollision(newX, newY, true) && 
+          !this.isMonsterAt(newX, newY, monster)) {
+        monster.targetPos = { x: newX, y: newY };
+        monster.isMoving = true;
+        monster.moveProgress = 0;
+        monster.direction = dir;
+        break;
+      }
+    }
+  }
+  
+  isMonsterAt(x, y, excludeMonster) {
+    for (const m of this.state.monsters) {
+      if (m !== excludeMonster && !m.defeated && 
+          (m.currentPos.x === x && m.currentPos.y === y ||
+           m.targetPos.x === x && m.targetPos.y === y)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  
+  startBattleWithMonster(monster) {
+    this.currentMonster = monster;
+    this.startBattle(monster.enemyId, 1);
+  }
+  
+  // ============ Item System ============
+  
+  checkAutoItemPickup() {
+    const map = this.state.currentMap;
+    if (!map?.items) return;
+    
+    const px = this.state.position.x;
+    const py = this.state.position.y;
+    
+    for (const item of map.items) {
+      const itemKey = `${this.state.currentMapId}_${item.id}`;
+      if (this.state.collectedItems.has(itemKey)) continue;
+      
+      if (item.pos.x === px && item.pos.y === py && item.itemId) {
+        this.collectItem(item, itemKey);
+      }
+    }
+  }
+  
+  checkItemPickup() {
+    const map = this.state.currentMap;
+    if (!map?.items) return false;
+    
+    const vectors = GAME_DATA.constants.directionVectors;
+    const vec = vectors[this.state.direction];
+    const tx = this.state.position.x + vec.x;
+    const ty = this.state.position.y + vec.y;
+    
+    for (const item of map.items) {
+      const itemKey = `${this.state.currentMapId}_${item.id}`;
+      if (this.state.collectedItems.has(itemKey)) continue;
+      
+      if (item.pos.x === tx && item.pos.y === ty && item.itemId) {
+        this.collectItem(item, itemKey);
+        return true;
+      }
+    }
+    return false;
+  }
+  
+  collectItem(item, itemKey) {
+    const itemData = GAME_DATA.items[item.itemId];
+    if (!itemData) return;
+    
+    this.state.collectedItems.add(itemKey);
+    this.giveItem(item.itemId, 1);
+    
+    this.state.screen = 'dialogue';
+    this.showDialogue('system', `${itemData.name}を手に入れた！`);
+  }
+  
+  // ============ Exit System ============
   
   checkExit(x, y) {
     const map = this.state.currentMap;
@@ -347,7 +523,6 @@ class Game {
     
     for (const exit of map.exits) {
       if (exit.at.x === x && exit.at.y === y) {
-        // Check exit condition
         if (exit.condition) {
           if (this.state.flags[exit.condition.flag] !== exit.condition.equals) {
             return null;
@@ -357,26 +532,6 @@ class Game {
       }
     }
     return null;
-  }
-  
-  checkRandomEncounter() {
-    const map = this.state.currentMap;
-    if (!map?.encounters?.enabled) return;
-    
-    if (Math.random() < map.encounters.rate) {
-      // Select enemy from table
-      const totalWeight = map.encounters.table.reduce((sum, e) => sum + e.weight, 0);
-      let roll = Math.random() * totalWeight;
-      
-      for (const entry of map.encounters.table) {
-        roll -= entry.weight;
-        if (roll <= 0) {
-          const count = entry.count[0] + Math.floor(Math.random() * (entry.count[1] - entry.count[0] + 1));
-          this.startBattle(entry.enemyId, count);
-          break;
-        }
-      }
-    }
   }
   
   // ============ Event System ============
@@ -431,7 +586,6 @@ class Game {
     
     const result = this.state.flags[event.condition.flag] === event.condition.equals;
     
-    // Check secondary condition
     if (result && event.condition.flag2) {
       return this.state.flags[event.condition.flag2] === event.condition.equals2;
     }
@@ -449,7 +603,7 @@ class Game {
     if (this.state.currentEventIndex >= this.state.pendingEventSteps.length) {
       this.state.pendingEventSteps = [];
       this.state.currentEventIndex = 0;
-      this.checkAutoEvents(); // Check for new auto events
+      this.checkAutoEvents();
       return;
     }
     
@@ -491,7 +645,6 @@ class Game {
     const speakerEl = document.getElementById('dialogue-speaker');
     const textEl = document.getElementById('dialogue-text');
     
-    // Get speaker name
     let speakerName = '';
     if (speakerId === 'system') {
       speakerName = '';
@@ -506,7 +659,6 @@ class Game {
     textEl.textContent = '';
     dialogueBox.classList.remove('hidden');
     
-    // Typewriter effect
     let charIndex = 0;
     const typeInterval = setInterval(() => {
       if (charIndex < text.length) {
@@ -524,14 +676,12 @@ class Game {
   advanceDialogue() {
     const textEl = document.getElementById('dialogue-text');
     
-    // If still typing, complete immediately
     if (this.currentTypeInterval && textEl.textContent.length < this.currentDialogueText.length) {
       clearInterval(this.currentTypeInterval);
       textEl.textContent = this.currentDialogueText;
       return;
     }
     
-    // Close dialogue and process next step
     document.getElementById('dialogue-box').classList.add('hidden');
     this.state.screen = 'map';
     this.processNextEventStep();
@@ -546,9 +696,8 @@ class Game {
     this.state.screen = 'battle';
     this.showScreen('battle-screen');
     
-    // Initialize battle state
     this.state.battleState = {
-      phase: 'start', // 'start', 'command', 'action', 'enemy', 'victory', 'defeat'
+      phase: 'start',
       enemy: {
         ...enemyData,
         stats: { ...enemyData.stats },
@@ -559,10 +708,8 @@ class Game {
       defending: false
     };
     
-    // Update UI
     this.updateBattleUI();
     
-    // Show enemy sprite
     const enemySprite = this.spriteRenderer.getEnemySprite(enemyId, 4);
     const enemySpriteEl = document.getElementById('enemy-sprite');
     enemySpriteEl.innerHTML = '';
@@ -570,7 +717,6 @@ class Game {
       enemySpriteEl.appendChild(enemySprite);
     }
     
-    // Show battle start message
     this.showBattleMessage(`${enemyData.name}があらわれた！`);
     
     setTimeout(() => {
@@ -592,11 +738,9 @@ class Game {
     const hero = this.state.hero;
     const enemy = this.state.battleState?.enemy;
     
-    // Hero stats
     document.getElementById('hero-hp-text').textContent = `${hero.stats.hp}/${hero.stats.maxHp}`;
     document.getElementById('hero-mp-text').textContent = `${hero.stats.mp}/${hero.stats.maxMp}`;
     
-    // HP bar
     const hpPercent = (hero.stats.hp / hero.stats.maxHp) * 100;
     const heroHpFill = document.querySelector('.hero-hp .hp-fill');
     heroHpFill.style.width = `${hpPercent}%`;
@@ -604,11 +748,9 @@ class Game {
     if (hpPercent <= 25) heroHpFill.classList.add('low');
     else if (hpPercent <= 50) heroHpFill.classList.add('mid');
     
-    // MP bar
     const mpPercent = (hero.stats.mp / hero.stats.maxMp) * 100;
     document.querySelector('.mp-fill').style.width = `${mpPercent}%`;
     
-    // Enemy HP
     if (enemy) {
       document.getElementById('enemy-name').textContent = enemy.name;
       const enemyHpPercent = (enemy.currentHp / enemy.stats.maxHp) * 100;
@@ -654,15 +796,12 @@ class Game {
     const hero = this.state.hero;
     const enemy = this.state.battleState.enemy;
     
-    // Calculate damage
     const weaponMod = GAME_DATA.equipment[hero.equipment.weapon]?.mods?.atk || 0;
     const atk = hero.stats.atk + weaponMod;
     const damage = Math.max(1, Math.floor(atk * 1.2 - enemy.stats.def * 0.6));
     
-    // Apply damage
     enemy.currentHp = Math.max(0, enemy.currentHp - damage);
     
-    // Show effect
     document.getElementById('battle-effect').classList.add('slash');
     setTimeout(() => {
       document.getElementById('battle-effect').classList.remove('slash');
@@ -675,14 +814,12 @@ class Game {
   }
   
   heroSkill() {
-    // Use basic slash skill
     this.heroAttack();
   }
   
   heroDefend() {
     this.state.battleState.defending = true;
     this.showBattleMessage(`${this.state.hero.name}は身を守っている！`);
-    
     setTimeout(() => this.enemyTurn(), 1200);
   }
   
@@ -701,10 +838,16 @@ class Game {
       return;
     }
     
-    // For simplicity, use first potion
-    const potionInv = this.state.hero.inventory.find(inv => inv.itemId === 'potion' && inv.qty > 0);
-    if (potionInv) {
+    // Use best available potion
+    const hiPotion = this.state.hero.inventory.find(inv => inv.itemId === 'hi_potion' && inv.qty > 0);
+    const potion = this.state.hero.inventory.find(inv => inv.itemId === 'potion' && inv.qty > 0);
+    
+    if (hiPotion && this.state.hero.stats.hp < this.state.hero.stats.maxHp - 30) {
+      this.useItemInBattle('hi_potion');
+    } else if (potion) {
       this.useItemInBattle('potion');
+    } else if (hiPotion) {
+      this.useItemInBattle('hi_potion');
     } else {
       this.showBattleMessage('使えるアイテムがない！');
       setTimeout(() => {
@@ -723,13 +866,17 @@ class Game {
     
     inv.qty--;
     
-    // Apply effects
     for (const effect of item.use.effects) {
       if (effect.type === 'healHp') {
         const oldHp = hero.stats.hp;
         hero.stats.hp = Math.min(hero.stats.maxHp, hero.stats.hp + effect.value);
         const healed = hero.stats.hp - oldHp;
         this.showBattleMessage(`${item.name}を使った！HPが${healed}回復した！`);
+      } else if (effect.type === 'healMp') {
+        const oldMp = hero.stats.mp;
+        hero.stats.mp = Math.min(hero.stats.maxMp, hero.stats.mp + effect.value);
+        const healed = hero.stats.mp - oldMp;
+        this.showBattleMessage(`${item.name}を使った！MPが${healed}回復した！`);
       }
     }
     
@@ -746,7 +893,6 @@ class Game {
       return;
     }
     
-    // Get AI action
     const pattern = enemy.ai.pattern;
     const action = pattern[this.state.battleState.aiIndex % pattern.length];
     this.state.battleState.aiIndex++;
@@ -806,7 +952,6 @@ class Game {
     const enemy = this.state.battleState.enemy;
     
     if (hero.stats.hp <= 0) {
-      // Defeat
       this.state.battleState.phase = 'defeat';
       
       if (this.currentBattleData?.defeat) {
@@ -821,14 +966,19 @@ class Game {
     }
     
     if (enemy.currentHp <= 0) {
-      // Victory
       this.state.battleState.phase = 'victory';
       
-      // Grant EXP
       const exp = enemy.exp;
+      const gold = enemy.gold || 0;
       this.state.hero.stats.exp += exp;
+      this.state.hero.stats.gold = (this.state.hero.stats.gold || 0) + gold;
       
-      // Check drops
+      // Mark visible monster as defeated
+      if (this.currentMonster) {
+        this.currentMonster.defeated = true;
+        this.currentMonster = null;
+      }
+      
       let dropMsg = '';
       for (const drop of enemy.drops) {
         if (Math.random() < drop.chance) {
@@ -838,9 +988,8 @@ class Game {
         }
       }
       
-      this.showBattleMessage(`${enemy.name}を倒した！${exp}の経験値を得た！${dropMsg}`);
+      this.showBattleMessage(`${enemy.name}を倒した！${exp}EXP ${gold}G獲得！${dropMsg}`);
       
-      // Check level up
       this.checkLevelUp();
       
       if (this.currentBattleData?.victory) {
@@ -856,7 +1005,6 @@ class Game {
       return;
     }
     
-    // Continue battle
     this.state.battleState.turn++;
     this.state.battleState.phase = 'command';
     this.enableBattleCommands(true);
@@ -919,7 +1067,6 @@ class Game {
   updateMenuUI() {
     const hero = this.state.hero;
     
-    // Status
     document.getElementById('stat-level').textContent = hero.stats.level;
     document.getElementById('stat-hp').textContent = hero.stats.hp;
     document.getElementById('stat-maxhp').textContent = hero.stats.maxHp;
@@ -930,31 +1077,35 @@ class Game {
     document.getElementById('stat-spd').textContent = hero.stats.spd;
     document.getElementById('stat-exp').textContent = hero.stats.exp;
     
-    // Hero portrait
     const portrait = document.querySelector('.hero-portrait');
     portrait.innerHTML = '';
     const heroSprite = this.spriteRenderer.getCharacterSprite('hero', 'down', 4);
     if (heroSprite) portrait.appendChild(heroSprite);
     
-    // Items
     const itemList = document.getElementById('item-list');
     itemList.innerHTML = '';
     
     for (const inv of hero.inventory) {
       if (inv.qty > 0) {
         const item = GAME_DATA.items[inv.itemId];
-        const li = document.createElement('li');
-        li.innerHTML = `${item.name} <span class="item-qty">×${inv.qty}</span>`;
-        li.addEventListener('click', () => this.useItemFromMenu(inv.itemId));
-        itemList.appendChild(li);
+        if (item) {
+          const li = document.createElement('li');
+          li.innerHTML = `${item.name} <span class="item-qty">×${inv.qty}</span>`;
+          li.addEventListener('click', () => this.useItemFromMenu(inv.itemId));
+          itemList.appendChild(li);
+        }
       }
     }
     
-    // Check for key items
+    // Key items
     if (this.state.flags.got_castle_key) {
-      const keyItem = GAME_DATA.items.castle_key;
       const li = document.createElement('li');
-      li.textContent = `${keyItem.name} (大事なもの)`;
+      li.textContent = `${GAME_DATA.items.castle_key.name} (大事なもの)`;
+      itemList.appendChild(li);
+    }
+    if (this.state.flags.got_tower_key) {
+      const li = document.createElement('li');
+      li.textContent = `${GAME_DATA.items.tower_key.name} (大事なもの)`;
       itemList.appendChild(li);
     }
     
@@ -962,7 +1113,6 @@ class Game {
       itemList.innerHTML = '<li>アイテムがない</li>';
     }
     
-    // Equipment
     document.getElementById('equip-weapon').textContent = GAME_DATA.equipment[hero.equipment.weapon]?.name || 'なし';
     document.getElementById('equip-armor').textContent = GAME_DATA.equipment[hero.equipment.armor]?.name || 'なし';
   }
@@ -978,6 +1128,8 @@ class Game {
     for (const effect of item.use.effects) {
       if (effect.type === 'healHp') {
         this.state.hero.stats.hp = Math.min(this.state.hero.stats.maxHp, this.state.hero.stats.hp + effect.value);
+      } else if (effect.type === 'healMp') {
+        this.state.hero.stats.mp = Math.min(this.state.hero.stats.maxMp, this.state.hero.stats.mp + effect.value);
       }
     }
     
@@ -1017,7 +1169,6 @@ class Game {
     document.getElementById('ending-title').textContent = ending.title;
     document.getElementById('ending-text').textContent = ending.text;
     
-    // Draw ending art
     const endingArt = document.querySelector('.ending-art');
     endingArt.innerHTML = '';
     const heroSprite = this.spriteRenderer.getCharacterSprite('hero', 'down', 4);
@@ -1039,12 +1190,14 @@ class Game {
   }
   
   update(deltaTime) {
+    // Update sparkle animation
+    this.state.sparkleFrame = Math.floor(Date.now() / 200) % 4;
+    
     if (this.state.screen !== 'map') return;
     
-    // Update movement animation
     this.updateMovement(deltaTime);
+    this.updateMonsters(deltaTime);
     
-    // Handle movement input (only when not already moving)
     if (!this.state.isMoving) {
       if (this.input.up) this.startMove('up');
       else if (this.input.down) this.startMove('down');
@@ -1060,19 +1213,15 @@ class Game {
     const map = this.state.currentMap;
     if (!map) return;
     
-    // Clear
     ctx.fillStyle = '#1a2636';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     
-    // Use interpolated render position for smooth movement
     const renderX = this.state.renderPosition.x;
     const renderY = this.state.renderPosition.y;
     
-    // Calculate camera offset to center player
     const camX = renderX * this.tileSize - this.canvas.width / 2 + this.tileSize / 2;
     const camY = renderY * this.tileSize - this.canvas.height / 2 + this.tileSize / 2;
     
-    // Clamp camera
     const maxCamX = map.size.w * this.tileSize - this.canvas.width;
     const maxCamY = map.size.h * this.tileSize - this.canvas.height;
     const clampedCamX = Math.max(0, Math.min(maxCamX, camX));
@@ -1094,10 +1243,35 @@ class Game {
       }
     }
     
-    // Draw chest if exists
+    // Draw items (pots, sparkles)
+    for (const item of (map.items || [])) {
+      const itemKey = `${this.state.currentMapId}_${item.id}`;
+      if (this.state.collectedItems.has(itemKey)) continue;
+      
+      let sprite;
+      if (item.sprite === 'sparkle') {
+        sprite = this.spriteRenderer.getTileSprite('sparkle');
+        // Add glow effect
+        const glow = Math.sin(Date.now() / 200) * 0.3 + 0.7;
+        ctx.globalAlpha = glow;
+      } else if (item.sprite === 'pot') {
+        sprite = this.spriteRenderer.getTileSprite('pot');
+      }
+      
+      if (sprite) {
+        ctx.drawImage(sprite,
+          item.pos.x * this.tileSize - clampedCamX,
+          item.pos.y * this.tileSize - clampedCamY
+        );
+      }
+      ctx.globalAlpha = 1;
+    }
+    
+    // Draw chests from events
     for (const event of (map.events || [])) {
       if (event.id.includes('chest')) {
-        const isOpen = event.condition && this.state.flags[event.condition.flag] === true;
+        const flagToCheck = event.condition?.flag;
+        const isOpen = flagToCheck && this.state.flags[flagToCheck] === true;
         const chestSprite = this.spriteRenderer.getTileSprite(isOpen ? 'chest_open' : 'chest');
         if (chestSprite) {
           ctx.drawImage(chestSprite,
@@ -1124,21 +1298,31 @@ class Game {
       }
     }
     
-    // Draw boss (dark knight) before defeated
-    if (map.name === '城の塔（最上階）' && !this.state.flags.boss_defeated) {
-      const darkKnightSprite = this.spriteRenderer.getEnemySprite('dark_knight');
-      if (darkKnightSprite) {
-        ctx.drawImage(darkKnightSprite,
-          7 * this.tileSize - clampedCamX,
-          3 * this.tileSize - clampedCamY
-        );
+    // Draw visible monsters
+    for (const monster of this.state.monsters) {
+      if (monster.defeated) continue;
+      
+      const enemyData = GAME_DATA.enemies[monster.enemyId];
+      if (!enemyData) continue;
+      
+      // Use map sprite (8x8 scaled up) or fallback to regular sprite
+      let sprite;
+      if (enemyData.mapSprite) {
+        sprite = this.spriteRenderer.getMapMonsterSprite(enemyData.mapSprite, 2);
+      } else {
+        sprite = this.spriteRenderer.getEnemySprite(monster.enemyId, 1);
+      }
+      
+      if (sprite) {
+        const mx = monster.renderPos.x * this.tileSize - clampedCamX;
+        const my = monster.renderPos.y * this.tileSize - clampedCamY;
+        ctx.drawImage(sprite, mx, my);
       }
     }
     
-    // Draw hero with smooth position
+    // Draw hero
     const heroSprite = this.spriteRenderer.getCharacterSprite('hero', this.state.direction);
     if (heroSprite) {
-      // Add slight bob when walking
       let bobOffset = 0;
       if (this.state.isMoving) {
         bobOffset = this.state.walkFrame === 1 ? -1 : 0;
