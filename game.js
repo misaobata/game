@@ -940,8 +940,16 @@ class Game {
     const ctx = this.ctx;
     if (!this.map) return;
     
-    // Clear
-    ctx.fillStyle = '#111';
+    // Clear with map-based color
+    let bgColor = '#111';
+    switch (this.map.tileData) {
+      case 'field': bgColor = '#228b22'; break;      // Forest green
+      case 'castle_inside': bgColor = '#654321'; break; // Dark brown
+      case 'castle_outside': bgColor = '#4a4a5a'; break; // Gray
+      case 'tower_inside': bgColor = '#1a1a2e'; break;  // Dark purple
+      case 'town': bgColor = '#696969'; break;        // Dim gray
+    }
+    ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     
     // Camera
