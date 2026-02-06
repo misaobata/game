@@ -621,20 +621,20 @@ class SpriteRenderer {
     const colors = {
       "0": "transparent",
       "1": "#1a1a2e",      // Dark purple-black
-      "2": "#2d2d44",      // Dark gray-purple  
-      "3": "#4a4a5a",      // Medium gray
-      "4": "#6a6a7a",      // Light gray
-      "5": "#f5e6d3",      // Skin/cream color
-      "6": "#ff5555",      // Red (lips, damage)
-      "7": "#8b5a2b",      // Brown (wood, buildings)
-      "8": "#3cb371",      // Green (grass, trees)
-      "9": "#228b22",      // Dark green
-      "A": "#4da6ff",      // Blue (water, magic)
-      "B": "#1e90ff",      // Darker blue
+      "2": "#3d3d5c",      // Dark gray-purple  
+      "3": "#5a5a7a",      // Medium gray
+      "4": "#8a8aa0",      // Light gray
+      "5": "#ffe4c4",      // Skin/cream color
+      "6": "#ff4444",      // Red (lips, damage)
+      "7": "#a0522d",      // Brown (wood, buildings) - Sienna
+      "8": "#32cd32",      // Lime green (grass)
+      "9": "#228b22",      // Forest green
+      "A": "#00bfff",      // Deep sky blue (water)
+      "B": "#4169e1",      // Royal blue
       "C": "#ffd700",      // Gold/yellow
-      "D": "#ff8c00",      // Orange
-      "E": "#ffb6c1",      // Pink
-      "F": "#9370db"       // Purple
+      "D": "#ff6600",      // Orange
+      "E": "#ff69b4",      // Hot pink
+      "F": "#9932cc"       // Dark orchid purple
     };
     
     for (let y = 0; y < size; y++) {
@@ -666,7 +666,10 @@ class SpriteRenderer {
   
   getTileSprite(id, scale = 1) {
     const data = SPRITES.tiles[id];
-    if (!data) return null;
+    if (!data) {
+      console.warn('Tile not found:', id);
+      return null;
+    }
     return this.getSprite(data, scale);
   }
   
