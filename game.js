@@ -1,5 +1,6 @@
 // ============================================
 // Game Engine - Pixel Hero: Rescue the Princess
+// Dragon Quest Style Movement
 // ============================================
 
 class Game {
@@ -11,6 +12,10 @@ class Game {
     this.tileSize = 16;
     this.spriteRenderer = new SpriteRenderer();
     
+    // Movement settings (Dragon Quest style)
+    this.moveSpeed = 0.08; // How fast to move between tiles (lower = slower)
+    this.moveCooldown = 80; // ms between moves when holding direction
+    
     // Game state
     this.state = {
       screen: 'map', // 'map', 'battle', 'menu', 'dialogue', 'gameover', 'ending'
@@ -19,9 +24,16 @@ class Game {
       currentMapId: null,
       currentMap: null,
       mapBackground: null,
-      position: { x: 0, y: 0 },
+      // Position tracking for smooth movement
+      position: { x: 0, y: 0 },           // Current tile position
+      renderPosition: { x: 0, y: 0 },     // Interpolated render position
+      targetPosition: { x: 0, y: 0 },     // Target tile position
+      moveProgress: 0,                     // 0-1 progress of current move
       direction: 'down',
       isMoving: false,
+      walkFrame: 0,
+      walkFrameTimer: 0,
+      lastMoveTime: 0,
       dialogueQueue: [],
       battleState: null,
       pendingEventSteps: [],
@@ -76,6 +88,9 @@ class Game {
         this.input[btn.dataset.dir] = true;
       });
       btn.addEventListener('mouseup', () => {
+        this.input[btn.dataset.dir] = false;
+      });
+      btn.addEventListener('mouseleave', () => {
         this.input[btn.dataset.dir] = false;
       });
       btn.addEventListener('touchstart', (e) => {
@@ -144,7 +159,7 @@ class Game {
     
     if (this.state.screen === 'dialogue') {
       this.advanceDialogue();
-    } else if (this.state.screen === 'map') {
+    } else if (this.state.screen === 'map' && !this.state.isMoving) {
       this.checkActionEvents();
     }
   }
@@ -152,7 +167,7 @@ class Game {
   toggleMenu() {
     if (this.state.screen === 'menu') {
       this.closeMenu();
-    } else if (this.state.screen === 'map') {
+    } else if (this.state.screen === 'map' && !this.state.isMoving) {
       this.openMenu();
     }
   }
@@ -202,7 +217,11 @@ class Game {
     this.state.currentMapId = mapId;
     this.state.currentMap = mapData;
     this.state.position = { ...spawn };
+    this.state.renderPosition = { x: spawn.x, y: spawn.y };
+    this.state.targetPosition = { ...spawn };
     this.state.direction = 'down';
+    this.state.isMoving = false;
+    this.state.moveProgress = 0;
     
     // Generate map background
     this.state.mapBackground = this.spriteRenderer.generateMapBackground(mapData, this.tileSize);
@@ -243,8 +262,12 @@ class Game {
     return this.state.flags[npc.condition.flag] === npc.condition.equals;
   }
   
-  move(direction) {
+  // Start movement to adjacent tile
+  startMove(direction) {
     if (this.state.isMoving || this.state.screen !== 'map') return;
+    
+    const now = Date.now();
+    if (now - this.state.lastMoveTime < this.moveCooldown) return;
     
     const vectors = GAME_DATA.constants.directionVectors;
     const vector = vectors[direction];
@@ -262,15 +285,60 @@ class Game {
     }
     
     if (!this.checkCollision(newX, newY)) {
-      this.state.position.x = newX;
-      this.state.position.y = newY;
+      // Start smooth movement
+      this.state.targetPosition = { x: newX, y: newY };
+      this.state.isMoving = true;
+      this.state.moveProgress = 0;
+      this.state.lastMoveTime = now;
+    }
+  }
+  
+  // Update movement animation
+  updateMovement(deltaTime) {
+    if (!this.state.isMoving) return;
+    
+    // Progress the movement
+    this.state.moveProgress += this.moveSpeed;
+    
+    // Update walking animation frame
+    this.state.walkFrameTimer += deltaTime;
+    if (this.state.walkFrameTimer > 150) {
+      this.state.walkFrame = (this.state.walkFrame + 1) % 2;
+      this.state.walkFrameTimer = 0;
+    }
+    
+    // Interpolate render position
+    const startX = this.state.position.x;
+    const startY = this.state.position.y;
+    const endX = this.state.targetPosition.x;
+    const endY = this.state.targetPosition.y;
+    
+    // Smooth easing
+    const t = this.easeInOut(Math.min(1, this.state.moveProgress));
+    this.state.renderPosition.x = startX + (endX - startX) * t;
+    this.state.renderPosition.y = startY + (endY - startY) * t;
+    
+    // Complete movement
+    if (this.state.moveProgress >= 1) {
+      this.state.position.x = this.state.targetPosition.x;
+      this.state.position.y = this.state.targetPosition.y;
+      this.state.renderPosition.x = this.state.position.x;
+      this.state.renderPosition.y = this.state.position.y;
+      this.state.isMoving = false;
+      this.state.moveProgress = 0;
+      this.state.walkFrame = 0;
       
-      // Check touch events
-      this.checkTouchEvents(newX, newY);
+      // Check touch events at new position
+      this.checkTouchEvents(this.state.position.x, this.state.position.y);
       
-      // Random encounter
+      // Random encounter check
       this.checkRandomEncounter();
     }
+  }
+  
+  // Easing function for smooth movement
+  easeInOut(t) {
+    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
   }
   
   checkExit(x, y) {
@@ -973,11 +1041,16 @@ class Game {
   update(deltaTime) {
     if (this.state.screen !== 'map') return;
     
-    // Handle movement input
-    if (this.input.up) this.move('up');
-    else if (this.input.down) this.move('down');
-    else if (this.input.left) this.move('left');
-    else if (this.input.right) this.move('right');
+    // Update movement animation
+    this.updateMovement(deltaTime);
+    
+    // Handle movement input (only when not already moving)
+    if (!this.state.isMoving) {
+      if (this.input.up) this.startMove('up');
+      else if (this.input.down) this.startMove('down');
+      else if (this.input.left) this.startMove('left');
+      else if (this.input.right) this.startMove('right');
+    }
   }
   
   render() {
@@ -991,9 +1064,13 @@ class Game {
     ctx.fillStyle = '#1a2636';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     
+    // Use interpolated render position for smooth movement
+    const renderX = this.state.renderPosition.x;
+    const renderY = this.state.renderPosition.y;
+    
     // Calculate camera offset to center player
-    const camX = this.state.position.x * this.tileSize - this.canvas.width / 2 + this.tileSize / 2;
-    const camY = this.state.position.y * this.tileSize - this.canvas.height / 2 + this.tileSize / 2;
+    const camX = renderX * this.tileSize - this.canvas.width / 2 + this.tileSize / 2;
+    const camY = renderY * this.tileSize - this.canvas.height / 2 + this.tileSize / 2;
     
     // Clamp camera
     const maxCamX = map.size.w * this.tileSize - this.canvas.width;
@@ -1058,12 +1135,18 @@ class Game {
       }
     }
     
-    // Draw hero
+    // Draw hero with smooth position
     const heroSprite = this.spriteRenderer.getCharacterSprite('hero', this.state.direction);
     if (heroSprite) {
+      // Add slight bob when walking
+      let bobOffset = 0;
+      if (this.state.isMoving) {
+        bobOffset = this.state.walkFrame === 1 ? -1 : 0;
+      }
+      
       ctx.drawImage(heroSprite,
-        this.state.position.x * this.tileSize - clampedCamX,
-        this.state.position.y * this.tileSize - clampedCamY
+        renderX * this.tileSize - clampedCamX,
+        renderY * this.tileSize - clampedCamY + bobOffset
       );
     }
   }
@@ -1073,4 +1156,3 @@ class Game {
 document.addEventListener('DOMContentLoaded', () => {
   window.game = new Game();
 });
-
