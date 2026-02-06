@@ -944,14 +944,29 @@ class Game {
       ctx.drawImage(this.mapBg, -cx, -cy);
     }
     
-    // Items
+    // Items (treasures)
     if (this.map.items) {
       for (const item of this.map.items) {
-        const flag = `item_${this.mapId}_${item.id}`;
-        if (this.flags[flag]) continue;
+        // Check if this item has been obtained via related flag
+        let taken = false;
+        if (item.id === 'chest1') taken = this.flags.got_castle_key;
+        if (item.id === 'chest2') taken = this.flags.got_castle_chest;
+        if (taken) continue;
         
-        const spr = this.spriteRenderer.getTileSprite(item.sprite || 'sparkle', this.scale);
-        if (spr) ctx.drawImage(spr, item.pos.x * this.scaledTile - cx, item.pos.y * this.scaledTile - cy);
+        // Draw chest with sparkle effect
+        const spr = this.spriteRenderer.getTileSprite(item.sprite || 'chest', this.scale);
+        if (spr) {
+          const px = item.pos.x * this.scaledTile - cx;
+          const py = item.pos.y * this.scaledTile - cy;
+          
+          // Add glow effect for items
+          ctx.globalAlpha = 0.3 + Math.sin(Date.now() / 200) * 0.2;
+          ctx.fillStyle = '#FFCC00';
+          ctx.fillRect(px - 2, py - 2, this.scaledTile + 4, this.scaledTile + 4);
+          ctx.globalAlpha = 1;
+          
+          ctx.drawImage(spr, px, py);
+        }
       }
     }
     

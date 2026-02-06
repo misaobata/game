@@ -120,24 +120,24 @@ const GAME_DATA = {
       name: "スライム",
       spriteKey: "slime",
       stats: { hp: 12, maxHp: 12, atk: 5, def: 1, spd: 2 },
-      drops: [{ itemId: "potion", chance: 0.2, qty: 1 }],
-      exp: 8, gold: 5,
+      drops: [{ itemId: "potion", chance: 0.5, qty: 1 }],
+      exp: 8, gold: 8,
       ai: { pattern: ["attack"] }
     },
     goblin: {
       name: "ゴブリン",
       spriteKey: "goblin",
       stats: { hp: 20, maxHp: 20, atk: 8, def: 3, spd: 3 },
-      drops: [{ itemId: "potion", chance: 0.25, qty: 1 }],
-      exp: 15, gold: 12,
+      drops: [{ itemId: "potion", chance: 0.6, qty: 1 }],
+      exp: 15, gold: 15,
       ai: { pattern: ["attack", "attack", "defend"] }
     },
     skeleton: {
       name: "スケルトン",
       spriteKey: "skeleton",
       stats: { hp: 30, maxHp: 30, atk: 12, def: 5, spd: 3 },
-      drops: [{ itemId: "hi_potion", chance: 0.2, qty: 1 }],
-      exp: 25, gold: 20,
+      drops: [{ itemId: "hi_potion", chance: 0.5, qty: 1 }],
+      exp: 25, gold: 25,
       ai: { pattern: ["attack", "attack"] }
     },
     dark_knight: {
@@ -145,7 +145,7 @@ const GAME_DATA = {
       spriteKey: "dark_knight",
       boss: true,
       stats: { hp: 150, maxHp: 150, atk: 18, def: 8, spd: 4 },
-      drops: [],
+      drops: [{ itemId: "hi_potion", chance: 1.0, qty: 3 }],
       exp: 200, gold: 500,
       ai: { pattern: ["attack", "attack", "powerAttack", "defend"] }
     }
@@ -225,16 +225,22 @@ const GAME_DATA = {
             { type: "setFlag", flag: "talked_villager_b", value: true }
           ]
         },
-        // ポーション入手
+        // ツボを調べる（説明のみ）
         {
           id: "ev_village_pot",
           trigger: "action",
           at: { x: 13, y: 2 },
-          condition: { flag: "got_village_potion", equals: false },
           steps: [
-            { type: "showDialogue", speaker: "system", text: "ツボを調べた…ポーションを見つけた！" },
-            { type: "giveItem", itemId: "potion", qty: 1 },
-            { type: "setFlag", flag: "got_village_potion", value: true }
+            { type: "showDialogue", speaker: "system", text: "ツボを調べた…空っぽだ。\nモンスターを倒してアイテムを集めよう！" }
+          ]
+        },
+        // 井戸を調べる
+        {
+          id: "ev_village_well",
+          trigger: "action",
+          at: { x: 2, y: 3 },
+          steps: [
+            { type: "showDialogue", speaker: "system", text: "古い井戸だ。\n水は枯れてしまっているようだ。" }
           ]
         }
       ],
@@ -244,9 +250,12 @@ const GAME_DATA = {
         { actorId: "villager_b", pos: { x: 12, y: 7 } },
         { actorId: "cat", pos: { x: 2, y: 11 } }
       ],
-      items: [
-        { id: "pot1", pos: { x: 13, y: 2 }, sprite: "pot" }
-      ]
+      decorations: [
+        { sprite: "well", x: 2, y: 3 },
+        { sprite: "pot", x: 13, y: 2 },
+        { sprite: "pot", x: 14, y: 2 }
+      ],
+      items: []
     },
 
     // ===== ② 草原と城門前 =====
@@ -328,6 +337,9 @@ const GAME_DATA = {
       npcs: [
         { actorId: "soldier", pos: { x: 5, y: 12 } }
       ],
+      decorations: [
+        { sprite: "chest", x: 15, y: 6 }
+      ],
       items: [
         { id: "chest1", pos: { x: 15, y: 6 }, sprite: "chest" }
       ],
@@ -408,6 +420,10 @@ const GAME_DATA = {
             { type: "changeMap", mapId: "castle_hall", spawn: { x: 8, y: 10 } }
           ]
         }
+      ],
+      decorations: [
+        { sprite: "gate", x: 6, y: 1 },
+        { sprite: "gate", x: 7, y: 1 }
       ],
       npcs: [],
       monsters: [
@@ -493,10 +509,15 @@ const GAME_DATA = {
           ]
         }
       ],
+      decorations: [
+        { sprite: "chest", x: 15, y: 2 },
+        { sprite: "pot", x: 2, y: 2 },
+        { sprite: "pot", x: 2, y: 11 },
+        { sprite: "pot", x: 15, y: 11 }
+      ],
       npcs: [],
       items: [
-        { id: "chest2", pos: { x: 15, y: 2 }, sprite: "chest" },
-        { id: "pot2", pos: { x: 2, y: 2 }, sprite: "pot" }
+        { id: "chest2", pos: { x: 15, y: 2 }, sprite: "chest" }
       ],
       monsters: [
         { enemyId: "skeleton", pos: { x: 5, y: 6 }, movePattern: "wander" },
