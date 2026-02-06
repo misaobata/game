@@ -671,12 +671,18 @@ class SpriteRenderer {
   }
   
   generateMapBackground(map, scale = 2) {
+    console.log('Generating background for:', map.name, 'tileData:', map.tileData);
+    
     const size = 16;
     const canvas = document.createElement('canvas');
     canvas.width = map.size.w * size * scale;
     canvas.height = map.size.h * size * scale;
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
+    
+    // Fill with base color first
+    ctx.fillStyle = '#2d4a2d';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     // Map type → tiles
     let floorTile = 'stone';
@@ -688,25 +694,37 @@ class SpriteRenderer {
         floorTile = 'grass';
         floorAlt = 'flower';
         wallTile = 'tree';
+        ctx.fillStyle = '#3cb371'; // Green base
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
         break;
       case 'castle_inside':
         floorTile = 'floor';
         wallTile = 'castle_wall';
+        ctx.fillStyle = '#5a4a3a'; // Brown base
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
         break;
       case 'castle_outside':
         floorTile = 'castle_ground';
         wallTile = 'castle_wall';
+        ctx.fillStyle = '#4a4a5a'; // Gray base
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
         break;
       case 'tower_inside':
         floorTile = 'tower_floor';
         wallTile = 'tower_wall';
+        ctx.fillStyle = '#1a1a2e'; // Dark base
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
         break;
       case 'town':
       default:
         floorTile = 'stone';
         floorAlt = 'path';
         wallTile = 'house';
+        ctx.fillStyle = '#6a6a7a'; // Gray stone base
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
+    
+    console.log('Using floor:', floorTile, 'wall:', wallTile);
     
     // Draw base tiles
     for (let y = 0; y < map.size.h; y++) {
@@ -720,7 +738,9 @@ class SpriteRenderer {
         }
         
         const spr = this.getTileSprite(tile, scale);
-        if (spr) ctx.drawImage(spr, x * size * scale, y * size * scale);
+        if (spr) {
+          ctx.drawImage(spr, x * size * scale, y * size * scale);
+        }
       }
     }
     
@@ -732,6 +752,7 @@ class SpriteRenderer {
       }
     }
     
+    console.log('Background generated, size:', canvas.width, 'x', canvas.height);
     return canvas;
   }
 }

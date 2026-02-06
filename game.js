@@ -955,6 +955,25 @@ class Game {
     // Background
     if (this.mapBg) {
       ctx.drawImage(this.mapBg, -cx, -cy);
+    } else {
+      // Fallback - draw colored background based on map type
+      switch (this.map.tileData) {
+        case 'field':
+          ctx.fillStyle = '#3cb371';
+          break;
+        case 'castle_inside':
+          ctx.fillStyle = '#5a4a3a';
+          break;
+        case 'castle_outside':
+          ctx.fillStyle = '#4a4a5a';
+          break;
+        case 'tower_inside':
+          ctx.fillStyle = '#1a1a2e';
+          break;
+        default:
+          ctx.fillStyle = '#6a6a7a';
+      }
+      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     }
     
     // Items (treasures)
