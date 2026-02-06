@@ -345,6 +345,10 @@ class Game {
         this.audio.getItem();
         this.nextEvent();
         break;
+      case 'changeMap':
+        this.eventQueue = [];
+        this.loadMap(step.mapId, step.spawn);
+        break;
       case 'startBattle':
         const battle = GAME_DATA.battles[step.battleId];
         if (battle) {

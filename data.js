@@ -349,7 +349,7 @@ const GAME_DATA = {
       tileData: "castle_outside",
       collision: [
         [1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-        [1,1,1,1,1,1,0,0,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1],
         [1,0,0,0,0,0,0,0,0,0,0,0,0,1],
         [1,0,0,0,0,0,0,0,0,0,0,0,0,1],
         [1,0,0,1,1,0,0,0,0,1,1,0,0,1],
@@ -365,21 +365,17 @@ const GAME_DATA = {
       exits: [
         // 草原に戻る
         { toMapId: "field", at: { x: 6, y: 10 }, spawn: { x: 8, y: 17 } },
-        { toMapId: "field", at: { x: 7, y: 10 }, spawn: { x: 9, y: 17 } },
-        // 城内へ（鍵が必要）
-        { toMapId: "castle_hall", at: { x: 6, y: 1 }, spawn: { x: 7, y: 10 }, condition: { flag: "got_castle_key", equals: true } },
-        { toMapId: "castle_hall", at: { x: 7, y: 1 }, spawn: { x: 7, y: 10 }, condition: { flag: "got_castle_key", equals: true } }
+        { toMapId: "field", at: { x: 7, y: 10 }, spawn: { x: 9, y: 17 } }
       ],
       events: [
-        // 城門（鍵なし）
+        // 城門（鍵なし）- 調べたとき
         {
           id: "ev_gate_locked",
           trigger: "action",
           at: { x: 6, y: 2 },
           condition: { flag: "got_castle_key", equals: false },
           steps: [
-            { type: "showDialogue", speaker: "system", text: "門は闇の力で封印されている…" },
-            { type: "showDialogue", speaker: "system", text: "鍵がなければ開けられない。" }
+            { type: "showDialogue", speaker: "system", text: "門は闇の力で封印されている…\n鍵がなければ開けられない。" }
           ]
         },
         {
@@ -388,18 +384,28 @@ const GAME_DATA = {
           at: { x: 7, y: 2 },
           condition: { flag: "got_castle_key", equals: false },
           steps: [
-            { type: "showDialogue", speaker: "system", text: "門は闇の力で封印されている…" },
-            { type: "showDialogue", speaker: "system", text: "鍵がなければ開けられない。" }
+            { type: "showDialogue", speaker: "system", text: "門は闇の力で封印されている…\n鍵がなければ開けられない。" }
           ]
         },
-        // 城門（鍵あり）
+        // 城門（鍵あり）- 調べたら入れる
         {
           id: "ev_gate_unlock",
           trigger: "action",
           at: { x: 6, y: 2 },
           condition: { flag: "got_castle_key", equals: true },
           steps: [
-            { type: "showDialogue", speaker: "system", text: "城の鍵を使った！\n封印が解けた！" }
+            { type: "showDialogue", speaker: "system", text: "城の鍵を使った！\n封印が解けた！" },
+            { type: "changeMap", mapId: "castle_hall", spawn: { x: 8, y: 10 } }
+          ]
+        },
+        {
+          id: "ev_gate_unlock2",
+          trigger: "action",
+          at: { x: 7, y: 2 },
+          condition: { flag: "got_castle_key", equals: true },
+          steps: [
+            { type: "showDialogue", speaker: "system", text: "城の鍵を使った！\n封印が解けた！" },
+            { type: "changeMap", mapId: "castle_hall", spawn: { x: 8, y: 10 } }
           ]
         }
       ],
