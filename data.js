@@ -438,10 +438,24 @@ const GAME_DATA = {
         }
       ],
       decorations: [
-        { sprite: "gate", x: 6, y: 1 },
-        { sprite: "gate", x: 7, y: 1 },
+        // 城門（大きく表示）
+        { sprite: "gate_top", x: 5, y: 0 },
+        { sprite: "gate_top", x: 6, y: 0 },
+        { sprite: "gate_top", x: 7, y: 0 },
+        { sprite: "gate_top", x: 8, y: 0 },
+        { sprite: "gate_left", x: 5, y: 1 },
+        { sprite: "gate_center", x: 6, y: 1 },
+        { sprite: "gate_center", x: 7, y: 1 },
+        { sprite: "gate_right", x: 8, y: 1 },
+        { sprite: "gate_left", x: 5, y: 2 },
         { sprite: "gate", x: 6, y: 2 },
-        { sprite: "gate", x: 7, y: 2 }
+        { sprite: "gate", x: 7, y: 2 },
+        { sprite: "gate_right", x: 8, y: 2 },
+        // 両側の塔
+        { sprite: "tower_pillar", x: 3, y: 1 },
+        { sprite: "tower_pillar", x: 3, y: 2 },
+        { sprite: "tower_pillar", x: 10, y: 1 },
+        { sprite: "tower_pillar", x: 10, y: 2 }
       ],
       npcs: [],
       monsters: [
