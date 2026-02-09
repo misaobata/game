@@ -962,10 +962,6 @@ class Game {
     
     // Background
     if (this.mapBg) {
-      if (!this._bgLoggedOnce) {
-        console.log('Drawing mapBg:', this.mapBg.width, 'x', this.mapBg.height, 'at', -cx, -cy);
-        this._bgLoggedOnce = true;
-      }
       ctx.drawImage(this.mapBg, -cx, -cy);
     } else {
       // Fallback - draw colored background based on map type

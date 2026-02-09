@@ -329,41 +329,41 @@ const SPRITES = {
            "0000077777700000" +
            "0000777777770000"],
     
-    // ===== 城内（床）=====
-    floor: ["7774777477747774" +
-            "7747774777477747" +
-            "7477747774777477" +
-            "4777477747774777" +
-            "7774777477747774" +
-            "7747774777477747" +
-            "7477747774777477" +
-            "4777477747774777" +
-            "7774777477747774" +
-            "7747774777477747" +
-            "7477747774777477" +
-            "4777477747774777" +
-            "7774777477747774" +
-            "7747774777477747" +
-            "7477747774777477" +
-            "4777477747774777"],
+    // ===== 城内（床）- チェッカーボードパターン =====
+    floor: ["CC55CC55CC55CC55" +
+            "55CC55CC55CC55CC" +
+            "CC55CC55CC55CC55" +
+            "55CC55CC55CC55CC" +
+            "CC55CC55CC55CC55" +
+            "55CC55CC55CC55CC" +
+            "CC55CC55CC55CC55" +
+            "55CC55CC55CC55CC" +
+            "CC55CC55CC55CC55" +
+            "55CC55CC55CC55CC" +
+            "CC55CC55CC55CC55" +
+            "55CC55CC55CC55CC" +
+            "CC55CC55CC55CC55" +
+            "55CC55CC55CC55CC" +
+            "CC55CC55CC55CC55" +
+            "55CC55CC55CC55CC"],
     
-    // ===== 城壁 =====
-    castle_wall: ["3333333333333333" +
-                  "3222222222222223" +
-                  "3222222222222223" +
-                  "3222233332222223" +
-                  "3222233332222223" +
-                  "3222233332222223" +
-                  "3222222222222223" +
-                  "3333333333333333" +
-                  "3333333333333333" +
-                  "3222222222222223" +
-                  "3222233332222223" +
-                  "3222233332222223" +
-                  "3222233332222223" +
-                  "3222222222222223" +
-                  "3222222222222223" +
-                  "3333333333333333"],
+    // ===== 城壁 - レンガ風 =====
+    castle_wall: ["6666666666666666" +
+                  "6111111611111116" +
+                  "6111111611111116" +
+                  "6666666666666666" +
+                  "6116111111611116" +
+                  "6116111111611116" +
+                  "6666666666666666" +
+                  "6111111611111116" +
+                  "6111111611111116" +
+                  "6666666666666666" +
+                  "6116111111611116" +
+                  "6116111111611116" +
+                  "6666666666666666" +
+                  "6111111611111116" +
+                  "6111111611111116" +
+                  "6666666666666666"],
     
     // ===== 城外（石畳）=====
     castle_ground: ["4343434343434343" +
@@ -798,19 +798,10 @@ class SpriteRenderer {
     }
     // Handle both array and string formats
     const spriteData = Array.isArray(data) ? data[0] : data;
-    
-    // Debug: Log first tile of each type
-    if (!this._loggedTiles) this._loggedTiles = {};
-    if (!this._loggedTiles[id]) {
-      console.log('Tile', id, 'length:', spriteData.length, 'first16:', spriteData.substring(0, 16));
-      this._loggedTiles[id] = true;
-    }
-    
     return this.getSprite(spriteData, scale);
   }
   
   generateMapBackground(map, scale = 2) {
-    console.log('Generating background for:', map.name, 'tileData:', map.tileData);
     
     const size = 16;
     const canvas = document.createElement('canvas');
@@ -863,11 +854,7 @@ class SpriteRenderer {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
     
-    console.log('Using floor:', floorTile, 'wall:', wallTile);
-    
     // Draw base tiles
-    let drawnTiles = 0;
-    let missedTiles = [];
     for (let y = 0; y < map.size.h; y++) {
       for (let x = 0; x < map.size.w; x++) {
         const blocked = map.collision[y]?.[x] === 1;
@@ -881,13 +868,9 @@ class SpriteRenderer {
         const spr = this.getTileSprite(tile, scale);
         if (spr) {
           ctx.drawImage(spr, x * size * scale, y * size * scale);
-          drawnTiles++;
-        } else {
-          missedTiles.push(tile);
         }
       }
     }
-    console.log('Tiles drawn:', drawnTiles, 'Missed:', [...new Set(missedTiles)]);
     
     // Draw castle gate for castle_outside maps
     if (map.tileData === 'castle_outside') {
@@ -917,7 +900,6 @@ class SpriteRenderer {
     
     // Draw special decorations
     if (map.decorations) {
-      console.log('Drawing decorations:', map.decorations.length);
       for (const d of map.decorations) {
         const spr = this.getTileSprite(d.sprite, scale);
         if (spr) {
@@ -928,15 +910,6 @@ class SpriteRenderer {
       }
     }
     
-    // Debug: Draw test rectangles to verify canvas is visible
-    ctx.fillStyle = '#FF0000';
-    ctx.fillRect(0, 0, 100, 100); // Red square in top-left
-    ctx.fillStyle = '#00FF00';
-    ctx.fillRect(canvas.width - 100, 0, 100, 100); // Green square in top-right
-    ctx.fillStyle = '#0000FF';
-    ctx.fillRect(0, canvas.height - 100, 100, 100); // Blue square in bottom-left
-    
-    console.log('Background generated, size:', canvas.width, 'x', canvas.height);
     return canvas;
   }
 }
