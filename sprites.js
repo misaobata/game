@@ -796,7 +796,9 @@ class SpriteRenderer {
       console.warn('Tile not found:', id);
       return null;
     }
-    return this.getSprite(data, scale);
+    // Handle both array and string formats
+    const spriteData = Array.isArray(data) ? data[0] : data;
+    return this.getSprite(spriteData, scale);
   }
   
   generateMapBackground(map, scale = 2) {
